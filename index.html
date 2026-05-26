@@ -50,8 +50,8 @@
   .month-tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 
   /* chart */
-  .chart-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  svg.chart{display:block;background:#fff}
+  .chart-wrap{overflow:hidden}
+  svg.chart{display:block;background:#fff;width:100%;height:auto;max-width:640px;margin:0 auto;border-radius:6px}
 
   /* day list */
   .day{display:flex;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px dashed var(--line)}
@@ -451,11 +451,12 @@ function renderChart(){
   const ym = addMonth(state.startMonth, state.activeMonthIdx);
   const days = monthDays(ym);
 
-  const W = Math.max(640, days*28 + 80), H = 360;
-  svg.setAttribute('width', W);
+  // 緊湊版：整月一目了然，不用左右滑
+  const W = 360, H = 260;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.removeAttribute('width');
 
-  const padL = 48, padR = 12, padT = 16, padB = 64;
+  const padL = 26, padR = 4, padT = 8, padB = 24;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
@@ -465,34 +466,34 @@ function renderChart(){
 
   let g = '';
 
-  // y 軸格線（每 0.1 一條，0.05 細線）
+  // y 軸格線（每 0.05 細、0.10 粗）
   for(let t=tMin*100; t<=tMax*100+0.5; t+=5){
     const tv = t/100;
     const yy = y(tv);
     const major = (Math.round(tv*100) % 10 === 0);
     g += `<line x1="${padL}" x2="${W-padR}" y1="${yy}" y2="${yy}"
-           stroke="${major?'#d0d0d0':'#eee'}" stroke-width="${major?1:0.5}"/>`;
-    if(major){
-      g += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="10" fill="#888">${tv.toFixed(2)}</text>`;
+           stroke="${major?'#cfd8d6':'#eef3f2'}" stroke-width="${major?0.6:0.3}"/>`;
+    if(major && Math.round(tv*100) % 20 === 0){
+      g += `<text x="${padL-3}" y="${yy+2.5}" text-anchor="end" font-size="7" fill="#5a7a76">${tv.toFixed(2)}</text>`;
     }
   }
 
-  // 36.50（低溫期上緣）& 37.00 強調線
+  // 36.50 & 37.00 強調線
   [36.50, 37.00].forEach(tv=>{
     g += `<line x1="${padL}" x2="${W-padR}" y1="${y(tv)}" y2="${y(tv)}"
-           stroke="#bbb" stroke-dasharray="4 3" stroke-width="1"/>`;
+           stroke="#9ed3cb" stroke-dasharray="2 2" stroke-width="0.7"/>`;
   });
 
   // x 軸日期
   for(let d=1; d<=days; d++){
     const xx = x(d);
+    const isMajor = (d===1 || d%5===0 || d===days);
     g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
-           stroke="${d%5===0?'#ddd':'#f1f1f1'}" stroke-width="${d%5===0?1:0.5}"/>`;
-    if(d===1 || d%2===0 || d===days){
-      g += `<text x="${xx}" y="${H-padB+12}" text-anchor="middle" font-size="10" fill="#666">${d}</text>`;
+           stroke="${isMajor?'#cfd8d6':'#eef3f2'}" stroke-width="${isMajor?0.6:0.3}"/>`;
+    if(isMajor){
+      g += `<text x="${xx}" y="${H-padB+9}" text-anchor="middle" font-size="7" fill="#5a7a76">${d}</text>`;
     }
   }
-  g += `<text x="${padL-6}" y="${H-padB+12}" text-anchor="end" font-size="10" fill="#666">日</text>`;
 
   // 預測：易孕窗 / 排卵 / 預計經期
   const pred = computePrediction();
@@ -508,13 +509,13 @@ function renderChart(){
   }
   if(pred.ovulation && pred.ovulation.startsWith(ym)){
     const xx = x(Number(pred.ovulation.slice(8,10)));
-    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#16a34a" stroke-dasharray="3 3" stroke-width="1.2"/>`;
-    g += `<text x="${xx}" y="${padT+10}" text-anchor="middle" font-size="10" fill="#16a34a">排卵</text>`;
+    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#16a34a" stroke-dasharray="2 2" stroke-width="0.8"/>`;
+    g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#16a34a">排卵</text>`;
   }
   if(pred.nextStart && pred.nextStart.startsWith(ym)){
     const xx = x(Number(pred.nextStart.slice(8,10)));
-    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#dc2626" stroke-dasharray="3 3" stroke-width="1.2"/>`;
-    g += `<text x="${xx}" y="${padT+10}" text-anchor="middle" font-size="10" fill="#dc2626">預計經期</text>`;
+    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#dc2626" stroke-dasharray="2 2" stroke-width="0.8"/>`;
+    g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#dc2626">經期</text>`;
   }
 
   // 月經期色塊
@@ -522,10 +523,10 @@ function renderChart(){
     const r = state.records[dateKey(ym,d)];
     if(!r || !r.flow || r.flow==='none') continue;
     const xx = x(d);
-    const w = Math.max(6, plotW/days*0.7);
+    const w = Math.max(4, plotW/days*0.8);
     const color = r.flow==='heavy' ? '#e74c3c' : '#f5b7b1';
-    g += `<rect x="${xx - w/2}" y="${H-padB-8}" width="${w}" height="8"
-            fill="${color}" rx="2"/>`;
+    g += `<rect x="${xx - w/2}" y="${H-padB-5}" width="${w}" height="5"
+            fill="${color}" rx="1"/>`;
   }
 
   // 體溫折線（斷點時不連線）
@@ -543,7 +544,7 @@ function renderChart(){
     }
   }
   if(pathParts.length){
-    g += `<path d="${pathParts.join(' ')}" fill="none" stroke="#c0392b" stroke-width="1.6"/>`;
+    g += `<path d="${pathParts.join(' ')}" fill="none" stroke="#c0392b" stroke-width="1.1"/>`;
   }
 
   // 實際排卵標記（綠圈）+ 覆蓋線
@@ -555,22 +556,19 @@ function renderChart(){
       const r = state.records[o.date];
       if(r && typeof r.temp === 'number'){
         const yy = y(r.temp);
-        g += `<circle cx="${xx}" cy="${yy}" r="6" fill="none" stroke="#16a34a" stroke-width="1.6"/>`;
-        g += `<text x="${xx}" y="${yy-9}" text-anchor="middle" font-size="9" fill="#16a34a" font-weight="700">排</text>`;
+        g += `<circle cx="${xx}" cy="${yy}" r="3.2" fill="none" stroke="#16a34a" stroke-width="1"/>`;
+        g += `<text x="${xx}" y="${yy-5}" text-anchor="middle" font-size="6" fill="#16a34a" font-weight="700">排</text>`;
       }
-      // 覆蓋線：在此週期內畫一段
       if(o.cover){
         const cy = y(o.cover);
-        // 找該週期在當月的範圍
-        const cs = o.cycleStart, ce = ovs.find(x=>x.cycleStart===o.cycleStart) ? null : null;
-        // 簡化：從週期起始到下個週期起始（或當月底）畫線
+        const cs = o.cycleStart;
         const periodStarts = computePrediction().periodStarts;
         const idx = periodStarts.indexOf(o.cycleStart);
         const endDate = (idx>=0 && idx+1<periodStarts.length) ? addDays(periodStarts[idx+1],-1) : `${ym}-${String(days).padStart(2,'0')}`;
         const d1 = (cs.startsWith(ym)) ? Number(cs.slice(8,10)) : 1;
         const d2 = (endDate.startsWith(ym)) ? Number(endDate.slice(8,10)) : days;
         if(d2 >= d1){
-          g += `<line x1="${x(d1)}" x2="${x(d2)}" y1="${cy}" y2="${cy}" stroke="#16a34a" stroke-dasharray="2 2" stroke-width="0.8" opacity="0.7"/>`;
+          g += `<line x1="${x(d1)}" x2="${x(d2)}" y1="${cy}" y2="${cy}" stroke="#16a34a" stroke-dasharray="1.5 1.5" stroke-width="0.5" opacity="0.7"/>`;
         }
       }
     }
@@ -583,13 +581,13 @@ function renderChart(){
     const xx = x(d);
     if(typeof r.temp === 'number' && !isNaN(r.temp)){
       const yy = y(r.temp);
-      g += `<circle cx="${xx}" cy="${yy}" r="2.6" fill="#c0392b"/>`;
+      g += `<circle cx="${xx}" cy="${yy}" r="1.6" fill="#c0392b"/>`;
     }
     if(r.tags && r.tags.length){
-      let line = padT + 4;
+      let line = padT + 3;
       r.tags.forEach((k,idx)=>{
         const t = TAGS.find(x=>x.k===k); if(!t) return;
-        g += `<text x="${xx}" y="${line + idx*10}" text-anchor="middle" font-size="9" fill="#555">${t.sym}</text>`;
+        g += `<text x="${xx}" y="${line + idx*6}" text-anchor="middle" font-size="5.5" fill="#5a7a76">${t.sym}</text>`;
       });
     }
   }
