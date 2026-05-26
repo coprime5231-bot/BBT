@@ -228,6 +228,12 @@
   </div>
 
   <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:6px">
+      <strong style="font-size:14px">月份</strong>
+      <label style="font-size:12px;color:#3a5a56;cursor:pointer;user-select:none">
+        <input type="checkbox" id="dualToggle" style="vertical-align:middle"> 雙月一起看
+      </label>
+    </div>
     <div class="month-tabs" id="monthTabs"></div>
     <div class="chart-wrap">
       <svg class="chart" id="chart" width="900" height="360" viewBox="0 0 900 360"></svg>
@@ -345,7 +351,7 @@ function loadAll(){
 function defaultState(){
   const now = new Date();
   const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
-  return { profile:{name:'',chart:''}, startMonth:`${y}-${m}`, records:{}, activeMonthIdx:0, lastBackupAt:null };
+  return { profile:{name:'',chart:''}, startMonth:`${y}-${m}`, records:{}, activeMonthIdx:0, lastBackupAt:null, dualMode:false };
 }
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
@@ -451,29 +457,61 @@ function detectOvulations(){
 
 /* ---------- 渲染：月份分頁 ---------- */
 const MONTH_TABS = 8;
+
+function getView(){
+  const months = [];
+  const want = state.dualMode ? 2 : 1;
+  let totalDays = 0;
+  for(let i=0;i<want;i++){
+    const idx = state.activeMonthIdx + i;
+    if(idx >= MONTH_TABS) break;
+    const ym = addMonth(state.startMonth, idx);
+    const days = monthDays(ym);
+    months.push({ ym, days, offset: totalDays, idx });
+    totalDays += days;
+  }
+  return { months, totalDays };
+}
+
 function renderTabs(){
   const tabs = document.getElementById('monthTabs');
   tabs.innerHTML = '';
+  const view = getView();
+  const activeSet = new Set(view.months.map(m => m.idx));
   for(let i=0;i<MONTH_TABS;i++){
     const ym = addMonth(state.startMonth, i);
     const m = Number(ym.slice(5,7));
     const b = document.createElement('button');
     b.textContent = `${m}月`;
-    if(i===state.activeMonthIdx) b.classList.add('on');
-    b.onclick = ()=>{ state.activeMonthIdx = i; save(); renderAll(); };
+    if(activeSet.has(i)) b.classList.add('on');
+    b.onclick = ()=>{
+      // 雙月模式時，點到最後一個月份就退回一格，避免越界
+      if(state.dualMode && i === MONTH_TABS - 1) state.activeMonthIdx = i - 1;
+      else state.activeMonthIdx = i;
+      save(); renderAll();
+    };
     tabs.appendChild(b);
   }
   const rl = document.getElementById('rangeLabel');
   rl.textContent = `${state.startMonth} ～ ${addMonth(state.startMonth, MONTH_TABS-1)}`;
+  document.getElementById('dualToggle').checked = !!state.dualMode;
 }
 
-/* ---------- 渲染：圖表 ---------- */
+document.getElementById('dualToggle').onchange = (e)=>{
+  state.dualMode = e.target.checked;
+  // 確保 activeMonthIdx 在雙月時不會越界
+  if(state.dualMode && state.activeMonthIdx >= MONTH_TABS - 1){
+    state.activeMonthIdx = MONTH_TABS - 2;
+  }
+  save(); renderAll();
+};
+
+/* ---------- 渲染：圖表（支援單月 / 雙月） ---------- */
 function renderChart(){
   const svg = document.getElementById('chart');
-  const ym = addMonth(state.startMonth, state.activeMonthIdx);
-  const days = monthDays(ym);
+  const view = getView();
+  const totalDays = view.totalDays;
 
-  // 緊湊版：整月一目了然，不用左右滑
   const W = 360, H = 280;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.removeAttribute('width');
@@ -483,12 +521,17 @@ function renderChart(){
   const plotH = H - padT - padB;
 
   const tMin = 36.00, tMax = 37.30;
-  const x = d => padL + (d-1)*(plotW/(days-1 || 1));
+  const xOfIdx = idx => padL + idx * (plotW / Math.max(totalDays - 1, 1));
+  const xOfDate = dateStr => {
+    const m = view.months.find(mm => dateStr.startsWith(mm.ym));
+    if(!m) return null;
+    return xOfIdx(m.offset + Number(dateStr.slice(8,10)) - 1);
+  };
   const y = t => padT + (tMax - t) / (tMax - tMin) * plotH;
 
   let g = '';
 
-  // y 軸格線（每 0.05 細、0.10 粗）
+  // y 軸格線
   for(let t=tMin*100; t<=tMax*100+0.5; t+=5){
     const tv = t/100;
     const yy = y(tv);
@@ -499,170 +542,199 @@ function renderChart(){
       g += `<text x="${padL-3}" y="${yy+2.5}" text-anchor="end" font-size="7" fill="#5a7a76">${tv.toFixed(2)}</text>`;
     }
   }
-
-  // 36.50 & 37.00 強調線
   [36.50, 37.00].forEach(tv=>{
     g += `<line x1="${padL}" x2="${W-padR}" y1="${y(tv)}" y2="${y(tv)}"
            stroke="#9ed3cb" stroke-dasharray="2 2" stroke-width="0.7"/>`;
   });
 
-  // x 軸日期
-  for(let d=1; d<=days; d++){
-    const xx = x(d);
-    const isMajor = (d===1 || d%5===0 || d===days);
-    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
-           stroke="${isMajor?'#cfd8d6':'#eef3f2'}" stroke-width="${isMajor?0.6:0.3}"/>`;
-    if(isMajor){
-      g += `<text x="${xx}" y="${H-padB+8}" text-anchor="middle" font-size="7" fill="#5a7a76">${d}</text>`;
+  // x 軸：每月份各自從 1 號重新標
+  view.months.forEach((m, mi)=>{
+    for(let d=1; d<=m.days; d++){
+      const idx = m.offset + d - 1;
+      const xx = xOfIdx(idx);
+      const isMajor = (d===1 || d%5===0 || d===m.days);
+      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
+             stroke="${isMajor?'#cfd8d6':'#eef3f2'}" stroke-width="${isMajor?0.6:0.3}"/>`;
+      if(isMajor){
+        g += `<text x="${xx}" y="${H-padB+8}" text-anchor="middle" font-size="6.5" fill="#5a7a76">${d}</text>`;
+      }
     }
-  }
+    // 月份分隔線（雙月時）
+    if(mi > 0){
+      const xx = xOfIdx(m.offset) - (plotW/Math.max(totalDays-1,1))/2;
+      g += `<line x1="${xx}" x2="${xx}" y1="${padT-2}" y2="${H-padB+12}" stroke="#0aa29a" stroke-width="1"/>`;
+    }
+    // 月份標題（雙月時顯示）
+    if(view.months.length > 1){
+      const mid = xOfIdx(m.offset + m.days/2 - 0.5);
+      g += `<text x="${mid}" y="${padT+8}" text-anchor="middle" font-size="9" fill="#0f3a36" font-weight="700" opacity="0.45">${Number(m.ym.slice(5,7))}月</text>`;
+    }
+  });
 
   // 備註符號（在日期下方，每個符號固定位置 + 顏色）
   const tagBase = H - padB + 16;
-  for(let d=1; d<=days; d++){
-    const r = state.records[dateKey(ym,d)];
-    if(!r || !r.tags || !r.tags.length) continue;
-    const xx = x(d);
-    TAGS.forEach((t, ti)=>{
-      if(r.tags.includes(t.k)){
-        g += `<text x="${xx}" y="${tagBase + ti*6.5}" text-anchor="middle" font-size="6.5" fill="${t.color}" font-weight="700">${t.sym}</text>`;
-      }
-    });
-  }
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const r = state.records[dateKey(m.ym, d)];
+      if(!r || !r.tags || !r.tags.length) continue;
+      const xx = xOfIdx(m.offset + d - 1);
+      TAGS.forEach((t, ti)=>{
+        if(r.tags.includes(t.k)){
+          g += `<text x="${xx}" y="${tagBase + ti*6.5}" text-anchor="middle" font-size="6.5" fill="${t.color}" font-weight="700">${t.sym}</text>`;
+        }
+      });
+    }
+  });
 
   // 預測：易孕窗 / 排卵 / 預計經期
   const pred = computePrediction();
   if(pred.fertileStart && pred.fertileEnd){
-    for(let d=1; d<=days; d++){
-      const dk = dateKey(ym, d);
-      if(dk >= pred.fertileStart && dk <= pred.fertileEnd){
-        const xx = x(d);
-        const w = Math.max(8, plotW/days*0.95);
-        g += `<rect x="${xx - w/2}" y="${padT}" width="${w}" height="${plotH}" fill="#86efac" opacity="0.18"/>`;
+    view.months.forEach(m=>{
+      for(let d=1; d<=m.days; d++){
+        const dk = dateKey(m.ym, d);
+        if(dk >= pred.fertileStart && dk <= pred.fertileEnd){
+          const xx = xOfIdx(m.offset + d - 1);
+          const w = Math.max(4, plotW/totalDays*0.95);
+          g += `<rect x="${xx - w/2}" y="${padT}" width="${w}" height="${plotH}" fill="#86efac" opacity="0.18"/>`;
+        }
       }
+    });
+  }
+  if(pred.ovulation){
+    const xx = xOfDate(pred.ovulation);
+    if(xx !== null){
+      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#16a34a" stroke-dasharray="2 2" stroke-width="0.8"/>`;
+      g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#16a34a">排卵</text>`;
     }
   }
-  if(pred.ovulation && pred.ovulation.startsWith(ym)){
-    const xx = x(Number(pred.ovulation.slice(8,10)));
-    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#16a34a" stroke-dasharray="2 2" stroke-width="0.8"/>`;
-    g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#16a34a">排卵</text>`;
-  }
-  if(pred.nextStart && pred.nextStart.startsWith(ym)){
-    const xx = x(Number(pred.nextStart.slice(8,10)));
-    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#dc2626" stroke-dasharray="2 2" stroke-width="0.8"/>`;
-    g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#dc2626">經期</text>`;
+  if(pred.nextStart){
+    const xx = xOfDate(pred.nextStart);
+    if(xx !== null){
+      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#dc2626" stroke-dasharray="2 2" stroke-width="0.8"/>`;
+      g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#dc2626">經期</text>`;
+    }
   }
 
   // 月經期色塊
-  for(let d=1; d<=days; d++){
-    const r = state.records[dateKey(ym,d)];
-    if(!r || !r.flow || r.flow==='none') continue;
-    const xx = x(d);
-    const w = Math.max(4, plotW/days*0.8);
-    const color = r.flow==='heavy' ? '#e74c3c' : '#f5b7b1';
-    g += `<rect x="${xx - w/2}" y="${H-padB-5}" width="${w}" height="5"
-            fill="${color}" rx="1"/>`;
-  }
-
-  // 體溫折線（斷點時不連線）
-  let pathParts = [];
-  let lastDay = null;
-  for(let d=1; d<=days; d++){
-    const r = state.records[dateKey(ym,d)];
-    if(r && typeof r.temp === 'number' && !isNaN(r.temp)){
-      const px = x(d), py = y(r.temp);
-      if(lastDay === d-1) pathParts.push(`L${px},${py}`);
-      else pathParts.push(`M${px},${py}`);
-      lastDay = d;
-    } else {
-      lastDay = null;
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const r = state.records[dateKey(m.ym, d)];
+      if(!r || !r.flow || r.flow==='none') continue;
+      const xx = xOfIdx(m.offset + d - 1);
+      const w = Math.max(3, plotW/totalDays*0.8);
+      const color = r.flow==='heavy' ? '#e74c3c' : '#f5b7b1';
+      g += `<rect x="${xx - w/2}" y="${H-padB-5}" width="${w}" height="5" fill="${color}" rx="1"/>`;
     }
-  }
+  });
+
+  // 體溫折線（跨月可連續）
+  let pathParts = [];
+  let lastIdx = null;
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const r = state.records[dateKey(m.ym, d)];
+      const idx = m.offset + d - 1;
+      if(r && typeof r.temp === 'number' && !isNaN(r.temp)){
+        const px = xOfIdx(idx), py = y(r.temp);
+        if(lastIdx === idx - 1) pathParts.push(`L${px},${py}`);
+        else pathParts.push(`M${px},${py}`);
+        lastIdx = idx;
+      } else {
+        lastIdx = null;
+      }
+    }
+  });
   if(pathParts.length){
     g += `<path d="${pathParts.join(' ')}" fill="none" stroke="#c0392b" stroke-width="1.1"/>`;
   }
 
   // 實際排卵標記（綠圈）+ 覆蓋線
   const ovs = detectOvulations();
+  const periodStarts = computePrediction().periodStarts;
   ovs.forEach(o=>{
-    if(o.date.startsWith(ym)){
-      const day = Number(o.date.slice(8,10));
-      const xx = x(day);
-      const r = state.records[o.date];
-      if(r && typeof r.temp === 'number'){
-        const yy = y(r.temp);
-        g += `<circle cx="${xx}" cy="${yy}" r="3.2" fill="none" stroke="#16a34a" stroke-width="1"/>`;
-        g += `<text x="${xx}" y="${yy-5}" text-anchor="middle" font-size="6" fill="#16a34a" font-weight="700">排</text>`;
-      }
-      if(o.cover){
-        const cy = y(o.cover);
-        const cs = o.cycleStart;
-        const periodStarts = computePrediction().periodStarts;
-        const idx = periodStarts.indexOf(o.cycleStart);
-        const endDate = (idx>=0 && idx+1<periodStarts.length) ? addDays(periodStarts[idx+1],-1) : `${ym}-${String(days).padStart(2,'0')}`;
-        const d1 = (cs.startsWith(ym)) ? Number(cs.slice(8,10)) : 1;
-        const d2 = (endDate.startsWith(ym)) ? Number(endDate.slice(8,10)) : days;
-        if(d2 >= d1){
-          g += `<line x1="${x(d1)}" x2="${x(d2)}" y1="${cy}" y2="${cy}" stroke="#16a34a" stroke-dasharray="1.5 1.5" stroke-width="0.5" opacity="0.7"/>`;
-        }
+    const xx = xOfDate(o.date);
+    if(xx === null) return;
+    const r = state.records[o.date];
+    if(r && typeof r.temp === 'number'){
+      const yy = y(r.temp);
+      g += `<circle cx="${xx}" cy="${yy}" r="3.2" fill="none" stroke="#16a34a" stroke-width="1"/>`;
+      g += `<text x="${xx}" y="${yy-5}" text-anchor="middle" font-size="6" fill="#16a34a" font-weight="700">排</text>`;
+    }
+    if(o.cover){
+      const cy = y(o.cover);
+      const i = periodStarts.indexOf(o.cycleStart);
+      const lastM = view.months[view.months.length-1];
+      const endDate = (i>=0 && i+1<periodStarts.length) ? addDays(periodStarts[i+1],-1) : `${lastM.ym}-${String(lastM.days).padStart(2,'0')}`;
+      let x1 = xOfDate(o.cycleStart);
+      let x2 = xOfDate(endDate);
+      if(x1 === null) x1 = padL;
+      if(x2 === null) x2 = W - padR;
+      if(x2 >= x1){
+        g += `<line x1="${x1}" x2="${x2}" y1="${cy}" y2="${cy}" stroke="#16a34a" stroke-dasharray="1.5 1.5" stroke-width="0.5" opacity="0.7"/>`;
       }
     }
   });
 
-  // 體溫點 + 備註符號
-  for(let d=1; d<=days; d++){
-    const r = state.records[dateKey(ym,d)];
-    if(!r) continue;
-    const xx = x(d);
-    if(typeof r.temp === 'number' && !isNaN(r.temp)){
-      const yy = y(r.temp);
-      g += `<circle cx="${xx}" cy="${yy}" r="1.6" fill="#c0392b"/>`;
+  // 體溫點
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const r = state.records[dateKey(m.ym, d)];
+      if(!r) continue;
+      const xx = xOfIdx(m.offset + d - 1);
+      if(typeof r.temp === 'number' && !isNaN(r.temp)){
+        const yy = y(r.temp);
+        g += `<circle cx="${xx}" cy="${yy}" r="1.6" fill="#c0392b"/>`;
+      }
     }
-  }
+  });
 
-  // 透明點擊區（含日期 + 符號區）
-  const colW = plotW / days;
+  // 透明點擊區
+  const colW = plotW / totalDays;
   const hitH = plotH + padB - 4;
-  for(let d=1; d<=days; d++){
-    const xx = x(d);
-    g += `<rect class="day-hit" data-day="${d}" x="${xx - colW/2}" y="${padT}" width="${colW}" height="${hitH}"><title>${dateKey(ym,d)}</title></rect>`;
-  }
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const xx = xOfIdx(m.offset + d - 1);
+      const dk = dateKey(m.ym, d);
+      g += `<rect class="day-hit" data-key="${dk}" x="${xx - colW/2}" y="${padT}" width="${colW}" height="${hitH}"><title>${dk}</title></rect>`;
+    }
+  });
 
   svg.innerHTML = g;
-
-  // 綁定點擊 → 開編輯
   svg.querySelectorAll('.day-hit').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      const d = Number(el.dataset.day);
-      openEdit(dateKey(ym, d));
-    });
+    el.addEventListener('click', ()=> openEdit(el.dataset.key));
   });
 }
 
-/* ---------- 渲染：當月每日清單 ---------- */
+/* ---------- 渲染：當月每日清單（單月 / 雙月） ---------- */
 function renderDayList(){
   const list = document.getElementById('dayList');
-  const ym = addMonth(state.startMonth, state.activeMonthIdx);
-  const days = monthDays(ym);
+  const view = getView();
+  const keys = [];
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const k = dateKey(m.ym, d);
+      if(state.records[k]) keys.push(k);
+    }
+  });
+  keys.sort((a,b)=> b.localeCompare(a)); // 新到舊
+
   let html = '';
-  for(let d=days; d>=1; d--){
-    const key = dateKey(ym,d);
+  for(const key of keys){
     const r = state.records[key];
-    if(!r) continue;
     const tags = (r.tags||[]).map(k=>{
       const t = TAGS.find(x=>x.k===k);
       return t ? `<span style="color:${t.color};font-weight:700">${t.sym}</span>${t.name}` : '';
     }).join('  ');
     const flow = r.flow==='heavy' ? '🔴經(多)' : r.flow==='light' ? '🩸經(少)' : '';
     html += `<div class="day">
-      <span class="dt">${ym.slice(5)}/${String(d).padStart(2,'0')}</span>
+      <span class="dt">${key.slice(5)}</span>
       <span class="tmp">${typeof r.temp==='number' ? r.temp.toFixed(2)+'°C' : '—'}</span>
       <span class="tags">${flow} ${tags} ${r.note?('・'+escapeHtml(r.note)):''}</span>
       <span class="edit" data-k="${key}">編輯</span>
     </div>`;
   }
   if(!html){
-    html = `<div class="hint" style="padding:8px 4px">這個月還沒有記錄，點右上「新增 / 編輯」開始。</div>`;
+    html = `<div class="hint" style="padding:8px 4px">這${view.months.length>1?'些':'個'}月還沒有記錄，點右上「新增 / 編輯」開始。</div>`;
   }
   list.innerHTML = html;
   list.querySelectorAll('.edit').forEach(el=>{
