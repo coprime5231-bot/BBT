@@ -26,6 +26,13 @@
   header .who{font-size:12px;color:#3a5a56}
   .cat{width:44px;height:44px;flex-shrink:0;filter:drop-shadow(0 1px 1px rgba(0,0,0,.12))}
   .cat-sm{width:32px;height:32px}
+  .sync-dot{width:10px;height:10px;border-radius:50%;background:#cfd8d6;flex-shrink:0;
+    box-shadow:0 0 0 2px rgba(255,255,255,.7);transition:background .2s}
+  .sync-dot.ok{background:#16a34a}
+  .sync-dot.err{background:#dc2626}
+  .sync-dot.syncing{background:#0aa29a;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .section-title{font-size:13px;font-weight:600;color:#0f3a36;margin:14px 0 8px;padding-top:10px;border-top:1px solid var(--line)}
   main{padding:12px;max-width:880px;margin:0 auto}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
     padding:12px;margin-bottom:12px;box-shadow:0 1px 2px rgba(31,61,58,.06)}
@@ -179,6 +186,7 @@
 
   <h1>基礎體溫記錄表</h1>
   <span class="who" id="profileLabel"></span>
+  <span class="sync-dot" id="syncDot" title="尚未啟用同步"></span>
   <button class="ghost" id="btnSettings">設定</button>
 </header>
 
@@ -325,6 +333,28 @@
       <input type="month" id="sStart">
       <span class="hint">圖表會顯示此月起連續 8 個月</span>
     </div>
+
+    <div class="section-title">☁️ GitHub 雲端同步（私密 Gist）</div>
+    <div class="hint" style="margin-bottom:8px">
+      資料會存到你 GitHub 的私密 Gist。換手機只要貼同一組 token，按「從雲端還原」就回來。
+      <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color:var(--accent2)">取得 Token</a>
+      （只需要 <code>gist</code> 權限）
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label>Token</label>
+      <input type="password" id="sGhToken" placeholder="ghp_... 或 github_pat_..." style="flex:1">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label style="cursor:pointer">
+        <input type="checkbox" id="sGhAuto" style="vertical-align:middle"> 自動同步（資料變更後 3 秒自動 push）
+      </label>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <button id="btnSyncNow">立即同步 ↑</button>
+      <button id="btnRestore">從雲端還原 ↓</button>
+      <span class="hint" id="syncStatus" style="flex:1"></span>
+    </div>
+
     <div class="actions">
       <button id="btnSetCancel">取消</button>
       <button id="btnSetSave" class="primary">儲存</button>
@@ -353,9 +383,134 @@ function defaultState(){
   const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
   return { profile:{name:'',chart:''}, startMonth:`${y}-${m}`, records:{}, activeMonthIdx:0, lastBackupAt:null, dualMode:false };
 }
-function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+function save(){
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+  scheduleSync();
+}
 
 let state = loadAll();
+
+/* ---------- GitHub Gist 同步 ---------- */
+const GH_LS = 'bbt-gh-config-v1';
+function loadGh(){
+  try{ return JSON.parse(localStorage.getItem(GH_LS)) || { token:'', gistId:'', autoSync:false, lastSyncAt:null }; }
+  catch(e){ return { token:'', gistId:'', autoSync:false, lastSyncAt:null }; }
+}
+function saveGh(){ localStorage.setItem(GH_LS, JSON.stringify(gh)); }
+let gh = loadGh();
+
+const GIST_FILENAME = 'bbt-data.json';
+const GIST_DESC = 'BBT tracker auto-sync (do not delete)';
+
+function setSyncStatus(state, msg){
+  const dot = document.getElementById('syncDot');
+  dot.className = 'sync-dot' + (state ? ' '+state : '');
+  dot.title = msg || '';
+  const ss = document.getElementById('syncStatus');
+  if(ss) ss.textContent = msg || '';
+}
+
+async function ghApi(path, opts={}){
+  if(!gh.token) throw new Error('未設定 Token');
+  const res = await fetch(`https://api.github.com${path}`, {
+    ...opts,
+    headers: {
+      'Authorization': `Bearer ${gh.token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(opts.headers||{})
+    },
+  });
+  if(!res.ok){
+    const txt = await res.text().catch(()=> '');
+    throw new Error(`GitHub ${res.status}: ${txt.slice(0,120)}`);
+  }
+  return res.json();
+}
+
+async function findExistingGist(){
+  const list = await ghApi('/gists?per_page=100');
+  return list.find(g => g.description === GIST_DESC) || null;
+}
+
+async function syncToGist(){
+  if(!gh.token){ setSyncStatus('', '未啟用同步'); return; }
+  setSyncStatus('syncing', '同步中…');
+  try {
+    const payload = JSON.stringify(state, null, 2);
+    const files = { [GIST_FILENAME]: { content: payload } };
+
+    if(!gh.gistId){
+      // 先找看看雲端有沒有舊的
+      const existing = await findExistingGist();
+      if(existing){ gh.gistId = existing.id; saveGh(); }
+    }
+
+    if(gh.gistId){
+      await ghApi(`/gists/${gh.gistId}`, {
+        method:'PATCH',
+        body: JSON.stringify({ files })
+      });
+    } else {
+      const created = await ghApi('/gists', {
+        method:'POST',
+        body: JSON.stringify({ description: GIST_DESC, public:false, files })
+      });
+      gh.gistId = created.id;
+    }
+    gh.lastSyncAt = new Date().toISOString();
+    saveGh();
+    setSyncStatus('ok', `已同步 ${new Date().toLocaleTimeString('zh-TW',{hour12:false})}`);
+  } catch(e){
+    console.error(e);
+    setSyncStatus('err', '同步失敗：'+e.message);
+  }
+}
+
+async function restoreFromGist(){
+  if(!gh.token){ alert('請先填 Token'); return; }
+  setSyncStatus('syncing', '還原中…');
+  try {
+    if(!gh.gistId){
+      const existing = await findExistingGist();
+      if(!existing){ setSyncStatus('err','雲端找不到備份'); alert('雲端找不到備份。可能需要先在舊裝置點一次「立即同步」。'); return; }
+      gh.gistId = existing.id; saveGh();
+    }
+    const data = await ghApi(`/gists/${gh.gistId}`);
+    const content = data.files?.[GIST_FILENAME]?.content;
+    if(!content) throw new Error('Gist 內找不到資料檔');
+    const restored = JSON.parse(content);
+    if(!restored.records) throw new Error('資料格式不正確');
+    if(!confirm('從雲端還原會覆蓋目前所有資料，確定？')) { setSyncStatus(gh.lastSyncAt?'ok':'', ''); return; }
+    state = restored;
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    setSyncStatus('ok', '已從雲端還原');
+    renderAll();
+  } catch(e){
+    console.error(e);
+    setSyncStatus('err','還原失敗：'+e.message);
+    alert('還原失敗：'+e.message);
+  }
+}
+
+// 防抖：資料變動 3 秒後才同步，避免每次按鍵都打 API
+let syncTimer = null;
+function scheduleSync(){
+  if(!gh.autoSync || !gh.token) return;
+  clearTimeout(syncTimer);
+  setSyncStatus('syncing','即將同步…');
+  syncTimer = setTimeout(syncToGist, 3000);
+}
+
+function refreshSyncDot(){
+  if(!gh.token){ setSyncStatus('', '尚未設定 Token'); return; }
+  if(!gh.autoSync){ setSyncStatus('', '已停用自動同步'); return; }
+  if(gh.lastSyncAt){
+    setSyncStatus('ok', `上次同步：${new Date(gh.lastSyncAt).toLocaleString('zh-TW',{hour12:false})}`);
+  } else {
+    setSyncStatus('', '尚未同步');
+  }
+}
 
 /* ---------- 月份工具 ---------- */
 function monthDays(ym){
@@ -836,6 +991,9 @@ document.getElementById('btnSettings').onclick = ()=>{
   document.getElementById('sName').value = state.profile.name || '';
   document.getElementById('sChart').value = state.profile.chart || '';
   document.getElementById('sStart').value = state.startMonth;
+  document.getElementById('sGhToken').value = gh.token || '';
+  document.getElementById('sGhAuto').checked = !!gh.autoSync;
+  refreshSyncDot();
   document.getElementById('setMask').classList.add('show');
 };
 document.getElementById('btnSetCancel').onclick = ()=>{
@@ -849,10 +1007,22 @@ document.getElementById('btnSetSave').onclick = ()=>{
   state.profile.chart = document.getElementById('sChart').value.trim();
   const sm = document.getElementById('sStart').value;
   if(sm) state.startMonth = sm;
+  // GitHub 同步設定
+  const newToken = document.getElementById('sGhToken').value.trim();
+  const newAuto = document.getElementById('sGhAuto').checked;
+  const tokenChanged = newToken !== gh.token;
+  gh.token = newToken;
+  gh.autoSync = newAuto;
+  if(tokenChanged) gh.gistId = ''; // 換 token 就重找 gist
+  saveGh();
   save();
   document.getElementById('setMask').classList.remove('show');
   renderAll();
+  refreshSyncDot();
 };
+
+document.getElementById('btnSyncNow').onclick = ()=> syncToGist();
+document.getElementById('btnRestore').onclick = ()=> restoreFromGist();
 
 /* ---------- 匯出 / 匯入 ---------- */
 document.getElementById('btnExport').onclick = ()=>{
@@ -1024,6 +1194,7 @@ function renderAll(){
   if(state.profile.name) bits.push(state.profile.name);
   if(state.profile.chart) bits.push('#'+state.profile.chart);
   pl.textContent = bits.join(' ');
+  refreshSyncDot();
   renderBackupReminder();
   renderReminder();
   renderPrediction();
