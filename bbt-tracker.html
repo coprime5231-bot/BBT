@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>基礎體溫記錄表</title>
+<style>
+  :root{
+    --tiffany:#81d8d0; --tiffany-soft:#b8e4de; --tiffany-bg:#d6efeb;
+    --bg:#d6efeb; --card:#ffffff; --line:#9ed3cb; --ink:#1f3d3a; --muted:#5a7a76;
+    --accent:#c0392b; --accent2:#0aa29a; --ok:#16a34a;
+    --orange:#f29849; --orange-dark:#d77a2c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+    -webkit-tap-highlight-color:transparent;
+    background:var(--bg)
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'><g fill='%231f3d3a' opacity='0.05'><ellipse cx='15' cy='22' rx='5' ry='4'/><ellipse cx='10' cy='14' rx='2' ry='2.6'/><ellipse cx='20' cy='14' rx='2' ry='2.6'/><ellipse cx='6' cy='18' rx='1.6' ry='2.2'/><ellipse cx='24' cy='18' rx='1.6' ry='2.2'/><ellipse cx='42' cy='48' rx='5' ry='4'/><ellipse cx='37' cy='40' rx='2' ry='2.6'/><ellipse cx='47' cy='40' rx='2' ry='2.6'/><ellipse cx='33' cy='44' rx='1.6' ry='2.2'/><ellipse cx='51' cy='44' rx='1.6' ry='2.2'/></g></svg>");
+  }
+  header{position:sticky;top:0;
+    background:linear-gradient(180deg,#a3ddd5 0%,#c6e9e3 100%);
+    border-bottom:1px solid var(--line);
+    padding:10px 12px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;flex:1;color:#0f2e2b;letter-spacing:0.5px}
+  header .who{font-size:12px;color:#3a5a56}
+  .cat{width:44px;height:44px;flex-shrink:0;filter:drop-shadow(0 1px 1px rgba(0,0,0,.12))}
+  .cat-sm{width:32px;height:32px}
+  main{padding:12px;max-width:880px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:12px;margin-bottom:12px;box-shadow:0 1px 2px rgba(31,61,58,.06)}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  label{font-size:13px;color:#444}
+  input[type=text],input[type=date],input[type=number],input[type=month],select{
+    padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;
+    font-size:15px;min-width:0}
+  input[type=number]{width:100px}
+  button{padding:9px 12px;border:1px solid var(--line);background:#fff;border-radius:8px;
+    font-size:14px;cursor:pointer}
+  button.primary{background:var(--tiffany);color:#0f2e2b;border-color:var(--accent2);font-weight:600}
+  button.primary:hover{background:var(--accent2);color:#fff}
+  button.ghost{background:transparent}
+  button.danger{color:#c0392b;border-color:#e8b6b0}
+  .pill{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid var(--line);
+    border-radius:999px;font-size:12px;background:#fff;cursor:pointer;user-select:none}
+  .pill.on{background:#fff3ec;border-color:var(--orange-dark);color:var(--orange-dark)}
+  .pill .sym{font-weight:700}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .month-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+  .month-tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  /* chart */
+  .chart-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  svg.chart{display:block;background:#fff}
+
+  /* day list */
+  .day{display:flex;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px dashed var(--line)}
+  .day:last-child{border-bottom:0}
+  .day .dt{width:60px;font-variant-numeric:tabular-nums;font-size:13px;color:#333}
+  .day .tmp{width:80px;font-variant-numeric:tabular-nums;font-weight:700}
+  .day .tags{flex:1;display:flex;flex-wrap:wrap;gap:4px;font-size:12px;color:#666}
+  .day .edit{font-size:12px;color:var(--accent2);cursor:pointer}
+
+  /* reminder */
+  .reminder{background:#fff3e6;border:1px solid #f0c89a;color:#7a4500;
+    padding:10px 12px;border-radius:12px;display:flex;align-items:center;gap:10px;
+    margin-bottom:12px;box-shadow:0 1px 2px rgba(31,61,58,.06)}
+  .reminder strong{color:#7a4500}
+  .reminder button{margin-left:auto;background:var(--orange);color:#fff;border-color:var(--orange-dark)}
+
+  /* prediction */
+  .stat{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
+  .stat .box{background:#eaf6f4;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .stat .box .lbl{font-size:11px;color:#3a5a56}
+  .stat .box .val{font-size:16px;font-weight:700;color:#0f3a36;margin-top:2px;font-variant-numeric:tabular-nums}
+  .stat .box.warn{background:#fef2f2;border-color:#fecaca}
+  .stat .box.warn .lbl{color:#991b1b}
+  .stat .box.warn .val{color:#991b1b}
+  .stat .box.ovu{background:#f0fdf4;border-color:#bbf7d0}
+  .stat .box.ovu .lbl{color:#166534}
+  .stat .box.ovu .val{color:#166534}
+
+  /* modal */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;
+    align-items:flex-end;justify-content:center;z-index:50}
+  .mask.show{display:flex}
+  .sheet{background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;
+    padding:16px;max-height:90vh;overflow:auto}
+  .sheet h3{margin:0 0 10px}
+  .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+  .hint{font-size:12px;color:var(--muted)}
+  details summary{cursor:pointer;font-size:13px;color:#555;padding:4px 0}
+  textarea{width:100%;min-height:60px;padding:8px;border:1px solid var(--line);border-radius:8px;
+    font-family:inherit;font-size:14px}
+  @media (min-width:560px){
+    .sheet{border-radius:16px;align-self:center;margin:auto}
+    .mask{align-items:center}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <svg class="cat" viewBox="0 0 60 60" aria-label="橘貓">
+    <!-- 耳 -->
+    <polygon points="14,26 19,12 25,23" fill="#f29849"/>
+    <polygon points="46,26 41,12 35,23" fill="#f29849"/>
+    <polygon points="16,23 19,16 23,22" fill="#fbbe87"/>
+    <polygon points="44,23 41,16 37,22" fill="#fbbe87"/>
+    <!-- 臉 -->
+    <ellipse cx="30" cy="37" rx="19" ry="17" fill="#f29849"/>
+    <!-- 條紋 -->
+    <path d="M22,25 Q24,21 26,25 M34,25 Q36,21 38,25" stroke="#d77a2c" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M14,32 Q11,34 13,36 M46,32 Q49,34 47,36" stroke="#d77a2c" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <!-- 嘴附近淺色 -->
+    <ellipse cx="30" cy="43" rx="11" ry="7" fill="#fbd2a8"/>
+    <!-- 眼 -->
+    <circle cx="22" cy="37" r="2.6" fill="#1a1a1a"/>
+    <circle cx="38" cy="37" r="2.6" fill="#1a1a1a"/>
+    <circle cx="22.8" cy="36.3" r="0.8" fill="#fff"/>
+    <circle cx="38.8" cy="36.3" r="0.8" fill="#fff"/>
+    <!-- 鼻 -->
+    <path d="M28.2,42.5 L31.8,42.5 L30,45 Z" fill="#e08aa5"/>
+    <!-- 嘴 -->
+    <path d="M30,45 Q27.5,47.5 25.5,46.5 M30,45 Q32.5,47.5 34.5,46.5" stroke="#5a4030" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <!-- 鬍鬚 -->
+    <line x1="10" y1="40" x2="18" y2="40" stroke="#8a6a40" stroke-width="0.6"/>
+    <line x1="42" y1="40" x2="50" y2="40" stroke="#8a6a40" stroke-width="0.6"/>
+    <line x1="11" y1="44" x2="18" y2="43" stroke="#8a6a40" stroke-width="0.6"/>
+    <line x1="42" y1="43" x2="49" y2="44" stroke="#8a6a40" stroke-width="0.6"/>
+    <!-- 紅貝雷帽 -->
+    <ellipse cx="30" cy="14" rx="17" ry="4.5" fill="#c0392b"/>
+    <ellipse cx="30" cy="11" rx="13.5" ry="6" fill="#c0392b"/>
+    <ellipse cx="30" cy="15.5" rx="17" ry="1.5" fill="#922b1f"/>
+    <circle cx="35" cy="6" r="2.4" fill="#922b1f"/>
+  </svg>
+
+  <svg class="cat" viewBox="0 0 60 60" aria-label="三花貓">
+    <!-- 耳 -->
+    <polygon points="14,26 19,12 25,23" fill="#f29849"/>
+    <polygon points="46,26 41,12 35,23" fill="#2a2a2a"/>
+    <polygon points="16,23 19,16 23,22" fill="#fbbe87"/>
+    <polygon points="44,23 41,16 37,22" fill="#5a5a5a"/>
+    <!-- 白底臉 -->
+    <ellipse cx="30" cy="37" rx="19" ry="17" fill="#fafafa"/>
+    <!-- 橘色色塊 -->
+    <path d="M11,30 Q13,22 22,21 Q26,28 23,38 Q17,42 11,37 Z" fill="#f29849"/>
+    <!-- 黑色色塊 -->
+    <path d="M49,30 Q47,22 38,21 Q34,28 37,40 Q43,44 49,37 Z" fill="#2a2a2a"/>
+    <!-- 小黑點 -->
+    <ellipse cx="26" cy="48" rx="3" ry="2" fill="#2a2a2a" opacity="0.85"/>
+    <!-- 眼 -->
+    <circle cx="22" cy="37" r="2.6" fill="#1a1a1a"/>
+    <circle cx="38" cy="37" r="2.6" fill="#fff5e0"/>
+    <circle cx="38" cy="37" r="1.6" fill="#1a1a1a"/>
+    <circle cx="22.8" cy="36.3" r="0.8" fill="#fff"/>
+    <!-- 鼻 -->
+    <path d="M28.2,42.5 L31.8,42.5 L30,45 Z" fill="#e08aa5"/>
+    <!-- 嘴 -->
+    <path d="M30,45 Q27.5,47.5 25.5,46.5 M30,45 Q32.5,47.5 34.5,46.5" stroke="#5a4030" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <!-- 鬍鬚 -->
+    <line x1="10" y1="40" x2="18" y2="40" stroke="#888" stroke-width="0.6"/>
+    <line x1="42" y1="40" x2="50" y2="40" stroke="#888" stroke-width="0.6"/>
+    <!-- 黃色報童帽 -->
+    <ellipse cx="30" cy="15" rx="16" ry="4" fill="#f4c95d"/>
+    <path d="M15,15 Q16,5 30,4 Q44,5 45,15 Z" fill="#f4c95d"/>
+    <ellipse cx="30" cy="15.5" rx="16" ry="1.5" fill="#d4a93d"/>
+    <circle cx="30" cy="5" r="1.8" fill="#d4a93d"/>
+    <!-- 帽簷 -->
+    <path d="M14,15 Q17,18 24,17" stroke="#d4a93d" stroke-width="1" fill="#f4c95d"/>
+  </svg>
+
+  <h1>基礎體溫記錄表</h1>
+  <span class="who" id="profileLabel"></span>
+  <button class="ghost" id="btnSettings">設定</button>
+</header>
+
+<main>
+
+  <div id="reminder" class="reminder" style="display:none">
+    <svg class="cat cat-sm" viewBox="0 0 60 60" aria-label="提醒貓">
+      <polygon points="14,26 19,12 25,23" fill="#f29849"/>
+      <polygon points="46,26 41,12 35,23" fill="#f29849"/>
+      <polygon points="16,23 19,16 23,22" fill="#fbbe87"/>
+      <polygon points="44,23 41,16 37,22" fill="#fbbe87"/>
+      <ellipse cx="30" cy="37" rx="19" ry="17" fill="#f29849"/>
+      <path d="M22,25 Q24,21 26,25 M34,25 Q36,21 38,25" stroke="#d77a2c" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <ellipse cx="30" cy="43" rx="11" ry="7" fill="#fbd2a8"/>
+      <circle cx="22" cy="37" r="2.6" fill="#1a1a1a"/>
+      <circle cx="38" cy="37" r="2.6" fill="#1a1a1a"/>
+      <path d="M28.2,42.5 L31.8,42.5 L30,45 Z" fill="#e08aa5"/>
+      <path d="M30,45 Q27.5,47.5 25.5,46.5 M30,45 Q32.5,47.5 34.5,46.5" stroke="#5a4030" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <!-- 廚師帽 -->
+      <rect x="20" y="11" width="20" height="5" fill="#fff" stroke="#d4a93d" stroke-width="0.6"/>
+      <ellipse cx="25" cy="9" rx="5" ry="6" fill="#fff" stroke="#d4a93d" stroke-width="0.6"/>
+      <ellipse cx="35" cy="9" rx="5" ry="6" fill="#fff" stroke="#d4a93d" stroke-width="0.6"/>
+      <ellipse cx="30" cy="6" rx="6" ry="7" fill="#fff" stroke="#d4a93d" stroke-width="0.6"/>
+    </svg>
+    <div>
+      <strong id="remindTitle">今天還沒記錄</strong>
+      <div class="hint" id="remindSub" style="color:#7a5a00"></div>
+    </div>
+    <button id="btnRemind">立即記錄</button>
+  </div>
+
+  <div class="card" id="predictCard" style="display:none">
+    <div class="row" style="justify-content:space-between">
+      <strong>週期預測</strong>
+      <span class="hint" id="predictHint"></span>
+    </div>
+    <div class="stat" id="predictStat"></div>
+  </div>
+
+  <div class="card">
+    <div class="month-tabs" id="monthTabs"></div>
+    <div class="chart-wrap">
+      <svg class="chart" id="chart" width="900" height="360" viewBox="0 0 900 360"></svg>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-top:6px">
+      <span class="hint">● 體溫　▮ 月經　<span style="color:#16a34a">⊙ 實際排卵</span>　<span style="color:#16a34a">┊預測排卵</span>　<span style="color:#dc2626">┊預計經期</span>　<span style="background:#86efac;opacity:.5;padding:0 4px;border-radius:2px">易孕窗</span></span>
+      <span class="hint" id="rangeLabel"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <strong>今日 / 補登</strong>
+      <button class="primary" id="btnAdd">新增 / 編輯</button>
+    </div>
+    <div id="dayList" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>資料管理（匯出 / 匯入 / 清除）</summary>
+      <div class="row" style="margin-top:8px">
+        <button id="btnExport">匯出 CSV</button>
+        <button id="btnExportJson">匯出 JSON 備份</button>
+        <button id="btnImport">匯入 JSON</button>
+        <input type="file" id="fileImport" accept="application/json,.json" style="display:none">
+        <button class="danger" id="btnClear">清除所有資料</button>
+      </div>
+      <p class="hint" style="margin-top:8px">資料只存在本機瀏覽器（localStorage）。換手機/換瀏覽器請先匯出備份。</p>
+    </details>
+  </div>
+
+</main>
+
+<!-- 編輯 sheet -->
+<div class="mask" id="editMask">
+  <div class="sheet">
+    <h3 id="editTitle">記錄</h3>
+    <div class="row" style="margin-bottom:8px">
+      <label>日期</label>
+      <input type="date" id="fDate">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label>基礎體溫 (°C)</label>
+      <input type="number" id="fTemp" step="0.01" min="35" max="38" placeholder="例如 36.55">
+    </div>
+    <div style="margin:6px 0">
+      <label>月經 / 出血量</label>
+      <div class="row" style="margin-top:6px" id="fFlowRow">
+        <span class="pill" data-flow="none">無</span>
+        <span class="pill" data-flow="light">少</span>
+        <span class="pill" data-flow="heavy">多</span>
+      </div>
+    </div>
+    <div style="margin:8px 0">
+      <label>備註（可多選）</label>
+      <div class="row" style="margin-top:6px" id="fTagsRow"></div>
+    </div>
+    <div style="margin:8px 0">
+      <label>其他備註</label>
+      <textarea id="fNote" placeholder="自由文字…"></textarea>
+    </div>
+    <div class="actions">
+      <button id="btnDelete" class="danger" style="margin-right:auto">刪除這天</button>
+      <button id="btnCancel">取消</button>
+      <button id="btnSave" class="primary">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 設定 sheet -->
+<div class="mask" id="setMask">
+  <div class="sheet">
+    <h3>設定</h3>
+    <div class="row" style="margin-bottom:8px">
+      <label>姓名</label>
+      <input type="text" id="sName" placeholder="自填">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label>病歷號</label>
+      <input type="text" id="sChart" placeholder="可空白">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label>起始月份</label>
+      <input type="month" id="sStart">
+      <span class="hint">圖表會顯示此月起連續 2 個月</span>
+    </div>
+    <div class="actions">
+      <button id="btnSetCancel">取消</button>
+      <button id="btnSetSave" class="primary">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- 資料模型 ---------- */
+const TAGS = [
+  {k:'nocturia',  sym:'○', name:'夜尿'},
+  {k:'wakeMid',   sym:'✕', name:'半夜醒'},
+  {k:'wakeEarly', sym:'☆', name:'早醒'},
+  {k:'lateSleep', sym:'◎', name:'晚睡'},
+  {k:'sex',       sym:'△', name:'行房'},
+  {k:'lateRise',  sym:'□', name:'晚起'},
+];
+const LS_KEY = 'bbt-tracker-v1';
+
+function loadAll(){
+  try{ return JSON.parse(localStorage.getItem(LS_KEY)) || defaultState(); }
+  catch(e){ return defaultState(); }
+}
+function defaultState(){
+  const now = new Date();
+  const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
+  return { profile:{name:'',chart:''}, startMonth:`${y}-${m}`, records:{}, activeMonthIdx:0 };
+}
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+let state = loadAll();
+
+/* ---------- 月份工具 ---------- */
+function monthDays(ym){
+  const [y,m] = ym.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+function addMonth(ym, n){
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, m-1+n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function dateKey(ym, day){ return `${ym}-${String(day).padStart(2,'0')}`; }
+function parseDate(s){
+  const [y,m,d] = s.split('-').map(Number);
+  return new Date(y, m-1, d, 12, 0, 0);
+}
+function fmtDate(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function daysBetween(a, b){ return Math.round((b - a) / 86400000); }
+function addDays(s, n){ const d = parseDate(s); d.setDate(d.getDate()+n); return fmtDate(d); }
+function todayKey(){ return fmtDate(new Date()); }
+
+/* ---------- 週期預測 ---------- */
+function computePrediction(){
+  const keys = Object.keys(state.records).sort();
+  const periodStarts = [];
+  let inPeriod = false, lastDate = null;
+  for(const k of keys){
+    const r = state.records[k];
+    const has = r && r.flow && r.flow !== 'none';
+    if(has){
+      let newStart = !inPeriod;
+      if(inPeriod && lastDate && daysBetween(parseDate(lastDate), parseDate(k)) > 2) newStart = true;
+      if(newStart) periodStarts.push(k);
+      inPeriod = true; lastDate = k;
+    } else if(lastDate && daysBetween(parseDate(lastDate), parseDate(k)) > 2){
+      inPeriod = false;
+    }
+  }
+  const intervals = [];
+  for(let i=1;i<periodStarts.length;i++){
+    intervals.push(daysBetween(parseDate(periodStarts[i-1]), parseDate(periodStarts[i])));
+  }
+  const avgLen = intervals.length
+    ? Math.round(intervals.reduce((a,b)=>a+b,0)/intervals.length) : null;
+
+  const lastStart = periodStarts[periodStarts.length-1] || null;
+  let nextStart=null, ovulation=null, fertileStart=null, fertileEnd=null;
+  if(lastStart && avgLen){
+    nextStart   = addDays(lastStart, avgLen);
+    ovulation   = addDays(nextStart, -14);
+    fertileStart= addDays(ovulation, -5);
+    fertileEnd  = addDays(ovulation,  1);
+  }
+  return { periodStarts, intervals, avgLen, lastStart,
+           nextStart, ovulation, fertileStart, fertileEnd };
+}
+
+/* ---------- 實際排卵判讀（雙相覆蓋線法） ---------- */
+function detectOvulations(){
+  const keys = Object.keys(state.records).sort();
+  const periodStarts = computePrediction().periodStarts;
+  if(!periodStarts.length) return [];
+
+  const cycles = [];
+  for(let i=0;i<periodStarts.length;i++){
+    const start = periodStarts[i];
+    const end = (i+1<periodStarts.length) ? addDays(periodStarts[i+1],-1) : todayKey();
+    cycles.push({start, end});
+  }
+
+  const result = [];
+  for(const c of cycles){
+    const temps = [];
+    for(const k of keys){
+      if(k < c.start || k > c.end) continue;
+      const r = state.records[k];
+      if(!r || typeof r.temp !== 'number') continue;
+      if(r.flow && r.flow !== 'none') continue; // 月經期略過
+      temps.push({date:k, temp:r.temp});
+    }
+    if(temps.length < 9) continue;
+
+    for(let i=6; i<=temps.length-3; i++){
+      const baseline = temps.slice(i-6, i).map(x=>x.temp);
+      const cover = Math.max(...baseline);
+      const next3 = temps.slice(i, i+3);
+      const allHi = next3.every(x => x.temp > cover + 0.1);
+      const oneSig = next3.some(x => x.temp >= cover + 0.2);
+      if(allHi && oneSig){
+        result.push({ date: temps[i-1].date, cover, cycleStart: c.start });
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+/* ---------- 渲染：月份分頁 ---------- */
+function renderTabs(){
+  const tabs = document.getElementById('monthTabs');
+  tabs.innerHTML = '';
+  for(let i=0;i<2;i++){
+    const ym = addMonth(state.startMonth, i);
+    const b = document.createElement('button');
+    b.textContent = ym.replace('-','年') + '月';
+    if(i===state.activeMonthIdx) b.classList.add('on');
+    b.onclick = ()=>{ state.activeMonthIdx = i; save(); renderAll(); };
+    tabs.appendChild(b);
+  }
+  const rl = document.getElementById('rangeLabel');
+  rl.textContent = `${state.startMonth} ～ ${addMonth(state.startMonth,1)}`;
+}
+
+/* ---------- 渲染：圖表 ---------- */
+function renderChart(){
+  const svg = document.getElementById('chart');
+  const ym = addMonth(state.startMonth, state.activeMonthIdx);
+  const days = monthDays(ym);
+
+  const W = Math.max(640, days*28 + 80), H = 360;
+  svg.setAttribute('width', W);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const padL = 48, padR = 12, padT = 16, padB = 64;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  const tMin = 36.00, tMax = 37.30;
+  const x = d => padL + (d-1)*(plotW/(days-1 || 1));
+  const y = t => padT + (tMax - t) / (tMax - tMin) * plotH;
+
+  let g = '';
+
+  // y 軸格線（每 0.1 一條，0.05 細線）
+  for(let t=tMin*100; t<=tMax*100+0.5; t+=5){
+    const tv = t/100;
+    const yy = y(tv);
+    const major = (Math.round(tv*100) % 10 === 0);
+    g += `<line x1="${padL}" x2="${W-padR}" y1="${yy}" y2="${yy}"
+           stroke="${major?'#d0d0d0':'#eee'}" stroke-width="${major?1:0.5}"/>`;
+    if(major){
+      g += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="10" fill="#888">${tv.toFixed(2)}</text>`;
+    }
+  }
+
+  // 36.50（低溫期上緣）& 37.00 強調線
+  [36.50, 37.00].forEach(tv=>{
+    g += `<line x1="${padL}" x2="${W-padR}" y1="${y(tv)}" y2="${y(tv)}"
+           stroke="#bbb" stroke-dasharray="4 3" stroke-width="1"/>`;
+  });
+
+  // x 軸日期
+  for(let d=1; d<=days; d++){
+    const xx = x(d);
+    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
+           stroke="${d%5===0?'#ddd':'#f1f1f1'}" stroke-width="${d%5===0?1:0.5}"/>`;
+    if(d===1 || d%2===0 || d===days){
+      g += `<text x="${xx}" y="${H-padB+12}" text-anchor="middle" font-size="10" fill="#666">${d}</text>`;
+    }
+  }
+  g += `<text x="${padL-6}" y="${H-padB+12}" text-anchor="end" font-size="10" fill="#666">日</text>`;
+
+  // 預測：易孕窗 / 排卵 / 預計經期
+  const pred = computePrediction();
+  if(pred.fertileStart && pred.fertileEnd){
+    for(let d=1; d<=days; d++){
+      const dk = dateKey(ym, d);
+      if(dk >= pred.fertileStart && dk <= pred.fertileEnd){
+        const xx = x(d);
+        const w = Math.max(8, plotW/days*0.95);
+        g += `<rect x="${xx - w/2}" y="${padT}" width="${w}" height="${plotH}" fill="#86efac" opacity="0.18"/>`;
+      }
+    }
+  }
+  if(pred.ovulation && pred.ovulation.startsWith(ym)){
+    const xx = x(Number(pred.ovulation.slice(8,10)));
+    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#16a34a" stroke-dasharray="3 3" stroke-width="1.2"/>`;
+    g += `<text x="${xx}" y="${padT+10}" text-anchor="middle" font-size="10" fill="#16a34a">排卵</text>`;
+  }
+  if(pred.nextStart && pred.nextStart.startsWith(ym)){
+    const xx = x(Number(pred.nextStart.slice(8,10)));
+    g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#dc2626" stroke-dasharray="3 3" stroke-width="1.2"/>`;
+    g += `<text x="${xx}" y="${padT+10}" text-anchor="middle" font-size="10" fill="#dc2626">預計經期</text>`;
+  }
+
+  // 月經期色塊
+  for(let d=1; d<=days; d++){
+    const r = state.records[dateKey(ym,d)];
+    if(!r || !r.flow || r.flow==='none') continue;
+    const xx = x(d);
+    const w = Math.max(6, plotW/days*0.7);
+    const color = r.flow==='heavy' ? '#e74c3c' : '#f5b7b1';
+    g += `<rect x="${xx - w/2}" y="${H-padB-8}" width="${w}" height="8"
+            fill="${color}" rx="2"/>`;
+  }
+
+  // 體溫折線（斷點時不連線）
+  let pathParts = [];
+  let lastDay = null;
+  for(let d=1; d<=days; d++){
+    const r = state.records[dateKey(ym,d)];
+    if(r && typeof r.temp === 'number' && !isNaN(r.temp)){
+      const px = x(d), py = y(r.temp);
+      if(lastDay === d-1) pathParts.push(`L${px},${py}`);
+      else pathParts.push(`M${px},${py}`);
+      lastDay = d;
+    } else {
+      lastDay = null;
+    }
+  }
+  if(pathParts.length){
+    g += `<path d="${pathParts.join(' ')}" fill="none" stroke="#c0392b" stroke-width="1.6"/>`;
+  }
+
+  // 實際排卵標記（綠圈）+ 覆蓋線
+  const ovs = detectOvulations();
+  ovs.forEach(o=>{
+    if(o.date.startsWith(ym)){
+      const day = Number(o.date.slice(8,10));
+      const xx = x(day);
+      const r = state.records[o.date];
+      if(r && typeof r.temp === 'number'){
+        const yy = y(r.temp);
+        g += `<circle cx="${xx}" cy="${yy}" r="6" fill="none" stroke="#16a34a" stroke-width="1.6"/>`;
+        g += `<text x="${xx}" y="${yy-9}" text-anchor="middle" font-size="9" fill="#16a34a" font-weight="700">排</text>`;
+      }
+      // 覆蓋線：在此週期內畫一段
+      if(o.cover){
+        const cy = y(o.cover);
+        // 找該週期在當月的範圍
+        const cs = o.cycleStart, ce = ovs.find(x=>x.cycleStart===o.cycleStart) ? null : null;
+        // 簡化：從週期起始到下個週期起始（或當月底）畫線
+        const periodStarts = computePrediction().periodStarts;
+        const idx = periodStarts.indexOf(o.cycleStart);
+        const endDate = (idx>=0 && idx+1<periodStarts.length) ? addDays(periodStarts[idx+1],-1) : `${ym}-${String(days).padStart(2,'0')}`;
+        const d1 = (cs.startsWith(ym)) ? Number(cs.slice(8,10)) : 1;
+        const d2 = (endDate.startsWith(ym)) ? Number(endDate.slice(8,10)) : days;
+        if(d2 >= d1){
+          g += `<line x1="${x(d1)}" x2="${x(d2)}" y1="${cy}" y2="${cy}" stroke="#16a34a" stroke-dasharray="2 2" stroke-width="0.8" opacity="0.7"/>`;
+        }
+      }
+    }
+  });
+
+  // 體溫點 + 備註符號
+  for(let d=1; d<=days; d++){
+    const r = state.records[dateKey(ym,d)];
+    if(!r) continue;
+    const xx = x(d);
+    if(typeof r.temp === 'number' && !isNaN(r.temp)){
+      const yy = y(r.temp);
+      g += `<circle cx="${xx}" cy="${yy}" r="2.6" fill="#c0392b"/>`;
+    }
+    if(r.tags && r.tags.length){
+      let line = padT + 4;
+      r.tags.forEach((k,idx)=>{
+        const t = TAGS.find(x=>x.k===k); if(!t) return;
+        g += `<text x="${xx}" y="${line + idx*10}" text-anchor="middle" font-size="9" fill="#555">${t.sym}</text>`;
+      });
+    }
+  }
+
+  svg.innerHTML = g;
+}
+
+/* ---------- 渲染：當月每日清單 ---------- */
+function renderDayList(){
+  const list = document.getElementById('dayList');
+  const ym = addMonth(state.startMonth, state.activeMonthIdx);
+  const days = monthDays(ym);
+  let html = '';
+  for(let d=days; d>=1; d--){
+    const key = dateKey(ym,d);
+    const r = state.records[key];
+    if(!r) continue;
+    const tags = (r.tags||[]).map(k=>{
+      const t = TAGS.find(x=>x.k===k); return t ? `${t.sym}${t.name}` : '';
+    }).join('  ');
+    const flow = r.flow==='heavy' ? '🔴經(多)' : r.flow==='light' ? '🩸經(少)' : '';
+    html += `<div class="day">
+      <span class="dt">${ym.slice(5)}/${String(d).padStart(2,'0')}</span>
+      <span class="tmp">${typeof r.temp==='number' ? r.temp.toFixed(2)+'°C' : '—'}</span>
+      <span class="tags">${flow} ${tags} ${r.note?('・'+escapeHtml(r.note)):''}</span>
+      <span class="edit" data-k="${key}">編輯</span>
+    </div>`;
+  }
+  if(!html){
+    html = `<div class="hint" style="padding:8px 4px">這個月還沒有記錄，點右上「新增 / 編輯」開始。</div>`;
+  }
+  list.innerHTML = html;
+  list.querySelectorAll('.edit').forEach(el=>{
+    el.onclick = ()=> openEdit(el.dataset.k);
+  });
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+/* ---------- 編輯 sheet ---------- */
+let editingKey = null;
+
+function openEdit(key){
+  // 預設今天
+  if(!key){
+    const t = new Date();
+    key = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  }
+  editingKey = key;
+  const r = state.records[key] || {};
+  document.getElementById('fDate').value = key;
+  document.getElementById('fTemp').value = (typeof r.temp==='number') ? r.temp : '';
+  document.getElementById('fNote').value = r.note || '';
+
+  // flow
+  document.querySelectorAll('#fFlowRow .pill').forEach(p=>{
+    p.classList.toggle('on', p.dataset.flow === (r.flow||'none'));
+  });
+
+  // tags
+  const tagsRow = document.getElementById('fTagsRow');
+  tagsRow.innerHTML = '';
+  TAGS.forEach(t=>{
+    const el = document.createElement('span');
+    el.className = 'pill';
+    el.innerHTML = `<span class="sym">${t.sym}</span> ${t.name}`;
+    el.dataset.k = t.k;
+    if(r.tags && r.tags.includes(t.k)) el.classList.add('on');
+    el.onclick = ()=> el.classList.toggle('on');
+    tagsRow.appendChild(el);
+  });
+
+  document.getElementById('editTitle').textContent = `記錄 ${key}`;
+  document.getElementById('editMask').classList.add('show');
+}
+
+document.getElementById('btnAdd').onclick = ()=> openEdit(null);
+document.getElementById('btnCancel').onclick = closeEdit;
+document.getElementById('editMask').addEventListener('click', e=>{
+  if(e.target.id==='editMask') closeEdit();
+});
+function closeEdit(){ document.getElementById('editMask').classList.remove('show'); }
+
+document.querySelectorAll('#fFlowRow .pill').forEach(p=>{
+  p.onclick = ()=>{
+    document.querySelectorAll('#fFlowRow .pill').forEach(x=>x.classList.remove('on'));
+    p.classList.add('on');
+  };
+});
+
+document.getElementById('btnSave').onclick = ()=>{
+  const key = document.getElementById('fDate').value;
+  if(!key){ alert('請選擇日期'); return; }
+  const tempStr = document.getElementById('fTemp').value.trim();
+  let temp = null;
+  if(tempStr !== ''){
+    temp = parseFloat(tempStr);
+    if(isNaN(temp) || temp < 34 || temp > 40){
+      alert('體溫看起來不對，請輸入 34–40°C 之間'); return;
+    }
+  }
+  const flow = (document.querySelector('#fFlowRow .pill.on')||{}).dataset?.flow || 'none';
+  const tags = Array.from(document.querySelectorAll('#fTagsRow .pill.on')).map(p=>p.dataset.k);
+  const note = document.getElementById('fNote').value.trim();
+
+  const rec = { temp:(temp===null?undefined:temp), flow, tags, note };
+  if(temp===null && flow==='none' && tags.length===0 && !note){
+    delete state.records[key];
+  } else {
+    state.records[key] = rec;
+  }
+  save(); closeEdit(); renderAll();
+};
+
+document.getElementById('btnDelete').onclick = ()=>{
+  const key = document.getElementById('fDate').value;
+  if(!key) return;
+  if(!confirm(`刪除 ${key} 的記錄？`)) return;
+  delete state.records[key];
+  save(); closeEdit(); renderAll();
+};
+
+/* ---------- 設定 ---------- */
+document.getElementById('btnSettings').onclick = ()=>{
+  document.getElementById('sName').value = state.profile.name || '';
+  document.getElementById('sChart').value = state.profile.chart || '';
+  document.getElementById('sStart').value = state.startMonth;
+  document.getElementById('setMask').classList.add('show');
+};
+document.getElementById('btnSetCancel').onclick = ()=>{
+  document.getElementById('setMask').classList.remove('show');
+};
+document.getElementById('setMask').addEventListener('click', e=>{
+  if(e.target.id==='setMask') document.getElementById('setMask').classList.remove('show');
+});
+document.getElementById('btnSetSave').onclick = ()=>{
+  state.profile.name = document.getElementById('sName').value.trim();
+  state.profile.chart = document.getElementById('sChart').value.trim();
+  const sm = document.getElementById('sStart').value;
+  if(sm) state.startMonth = sm;
+  save();
+  document.getElementById('setMask').classList.remove('show');
+  renderAll();
+};
+
+/* ---------- 匯出 / 匯入 ---------- */
+document.getElementById('btnExport').onclick = ()=>{
+  const rows = [['date','temp','flow','tags','note']];
+  Object.keys(state.records).sort().forEach(k=>{
+    const r = state.records[k];
+    rows.push([k, (typeof r.temp==='number'?r.temp:''), r.flow||'', (r.tags||[]).join('|'), (r.note||'').replace(/\n/g,' ')]);
+  });
+  const csv = rows.map(r => r.map(c => {
+    const s = String(c);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  }).join(',')).join('\n');
+  downloadFile('bbt-' + state.startMonth + '.csv', '﻿'+csv, 'text/csv');
+};
+document.getElementById('btnExportJson').onclick = ()=>{
+  downloadFile('bbt-backup-' + new Date().toISOString().slice(0,10) + '.json',
+    JSON.stringify(state,null,2), 'application/json');
+};
+document.getElementById('btnImport').onclick = ()=> document.getElementById('fileImport').click();
+document.getElementById('fileImport').onchange = (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      if(!data.records) throw new Error('格式不對');
+      if(!confirm('匯入會覆蓋目前資料，繼續？')) return;
+      state = data; save(); renderAll();
+      alert('匯入完成');
+    }catch(err){ alert('匯入失敗：' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+};
+document.getElementById('btnClear').onclick = ()=>{
+  if(!confirm('真的要清除所有記錄？此操作無法復原（建議先匯出備份）')) return;
+  state = defaultState(); save(); renderAll();
+};
+function downloadFile(name, content, type){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- 提醒 ---------- */
+function renderReminder(){
+  const k = todayKey();
+  const r = state.records[k];
+  const need = !r || typeof r.temp !== 'number';
+  const box = document.getElementById('reminder');
+  box.style.display = need ? 'flex' : 'none';
+  document.getElementById('remindSub').textContent = `${k}　測完體溫順手記一下吧`;
+  document.getElementById('btnRemind').onclick = ()=> openEdit(k);
+}
+
+/* ---------- 預測卡 ---------- */
+function renderPrediction(){
+  const p = computePrediction();
+  const card = document.getElementById('predictCard');
+  if(!p.lastStart){ card.style.display='none'; return; }
+  card.style.display='';
+
+  const today = todayKey();
+  const stat = document.getElementById('predictStat');
+  let boxes = [];
+  boxes.push(`<div class="box"><div class="lbl">最近一次月經</div><div class="val">${p.lastStart}</div></div>`);
+
+  const ovs = detectOvulations();
+  if(ovs.length){
+    const last = ovs[ovs.length-1];
+    const dago = daysBetween(parseDate(last.date), parseDate(today));
+    let agoText;
+    if(dago===0) agoText='今天';
+    else if(dago>0) agoText=`${dago} 天前`;
+    else agoText=`${-dago} 天後`;
+    boxes.push(`<div class="box ovu"><div class="lbl">實際排卵（體溫判讀）</div><div class="val">${last.date}（${agoText}）</div></div>`);
+  }
+
+  if(p.avgLen){
+    boxes.push(`<div class="box"><div class="lbl">平均週期</div><div class="val">${p.avgLen} 天</div></div>`);
+
+    const dn = daysBetween(parseDate(today), parseDate(p.nextStart));
+    let text, cls='';
+    if(dn>0) text = `${p.nextStart}（還有 ${dn} 天）`;
+    else if(dn===0) text = `${p.nextStart}（就是今天）`;
+    else { text = `${p.nextStart}（已晚 ${-dn} 天）`; cls=' warn'; }
+    boxes.push(`<div class="box${cls}"><div class="lbl">下次月經預計</div><div class="val">${text}</div></div>`);
+
+    const dov = daysBetween(parseDate(today), parseDate(p.ovulation));
+    let ovText;
+    if(dov>0) ovText = `${p.ovulation}（還有 ${dov} 天）`;
+    else if(dov===0) ovText = `${p.ovulation}（就是今天）`;
+    else ovText = `${p.ovulation}（${-dov} 天前）`;
+    boxes.push(`<div class="box ovu"><div class="lbl">下次排卵預計</div><div class="val">${ovText}</div></div>`);
+  } else {
+    boxes.push(`<div class="box"><div class="lbl">平均週期</div><div class="val" style="font-size:13px">需 2 次以上經期才能估算</div></div>`);
+  }
+  stat.innerHTML = boxes.join('');
+
+  const hint = document.getElementById('predictHint');
+  hint.textContent = p.intervals.length
+    ? `依 ${p.periodStarts.length} 次經期推估（排卵＝下次經期 −14 天）`
+    : '';
+}
+
+/* ---------- 整體渲染 ---------- */
+function renderAll(){
+  const pl = document.getElementById('profileLabel');
+  const bits = [];
+  if(state.profile.name) bits.push(state.profile.name);
+  if(state.profile.chart) bits.push('#'+state.profile.chart);
+  pl.textContent = bits.join(' ');
+  renderReminder();
+  renderPrediction();
+  renderTabs();
+  renderChart();
+  renderDayList();
+}
+renderAll();
+</script>
+</body>
+</html>
