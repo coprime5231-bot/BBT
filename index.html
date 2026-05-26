@@ -71,6 +71,9 @@
     margin-bottom:12px;box-shadow:0 1px 2px rgba(31,61,58,.06)}
   .reminder strong{color:#7a4500}
   .reminder button{margin-left:auto;background:var(--orange);color:#fff;border-color:var(--orange-dark)}
+  .reminder.backup{background:#fdecec;border-color:#f5b7b1}
+  .reminder.backup strong{color:#922b1f}
+  .reminder.backup button{background:#c0392b;border-color:#922b1f}
 
   /* prediction */
   .stat{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
@@ -181,6 +184,15 @@
 
 <main>
 
+  <div id="backupReminder" class="reminder backup" style="display:none">
+    <span style="font-size:22px">💾</span>
+    <div>
+      <strong>該備份資料了</strong>
+      <div class="hint" id="backupSub" style="color:#922b1f"></div>
+    </div>
+    <button id="btnBackupNow">立即備份</button>
+  </div>
+
   <div id="reminder" class="reminder" style="display:none">
     <svg class="cat cat-sm" viewBox="0 0 60 60" aria-label="提醒貓">
       <polygon points="14,26 19,12 25,23" fill="#f29849"/>
@@ -241,13 +253,14 @@
     <details>
       <summary>資料管理（匯出 / 匯入 / 清除）</summary>
       <div class="row" style="margin-top:8px">
+        <button id="btnBackupDrive" class="primary">💾 備份到 Google Drive</button>
         <button id="btnExport">匯出 CSV</button>
         <button id="btnExportJson">匯出 JSON 備份</button>
         <button id="btnImport">匯入 JSON</button>
         <input type="file" id="fileImport" accept="application/json,.json" style="display:none">
         <button class="danger" id="btnClear">清除所有資料</button>
       </div>
-      <p class="hint" style="margin-top:8px">資料只存在本機瀏覽器（localStorage）。換手機/換瀏覽器請先匯出備份。</p>
+      <p class="hint" id="lastBackupHint" style="margin-top:8px">資料只存在本機瀏覽器（localStorage）。換手機/換瀏覽器請先備份。</p>
     </details>
   </div>
 
@@ -332,7 +345,7 @@ function loadAll(){
 function defaultState(){
   const now = new Date();
   const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
-  return { profile:{name:'',chart:''}, startMonth:`${y}-${m}`, records:{}, activeMonthIdx:0 };
+  return { profile:{name:'',chart:''}, startMonth:`${y}-${m}`, records:{}, activeMonthIdx:0, lastBackupAt:null };
 }
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
@@ -785,7 +798,40 @@ document.getElementById('btnExport').onclick = ()=>{
 document.getElementById('btnExportJson').onclick = ()=>{
   downloadFile('bbt-backup-' + new Date().toISOString().slice(0,10) + '.json',
     JSON.stringify(state,null,2), 'application/json');
+  markBackedUp();
 };
+
+async function backupToDrive(){
+  const json = JSON.stringify(state, null, 2);
+  const fname = `bbt-backup-${todayKey()}.json`;
+
+  // 1) 手機優先：Web Share API → 直接分享到 Drive App / LINE / Email
+  try {
+    const file = new File([json], fname, {type:'application/json'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'BBT 備份', text:'基礎體溫資料備份'});
+      markBackedUp();
+      return;
+    }
+  } catch(e){
+    if(e.name === 'AbortError'){ return; }  // 使用者取消
+  }
+
+  // 2) 電腦/不支援 share：下載檔案 + 開 Drive 上傳頁
+  downloadFile(fname, json, 'application/json');
+  setTimeout(()=> window.open('https://drive.google.com/drive/my-drive', '_blank'), 300);
+  markBackedUp();
+  alert(`✅ 備份檔已下載：${fname}\n📁 Google Drive 已在新分頁打開，請把檔案拖進去（或點右上「新增」→ 上傳）`);
+}
+
+function markBackedUp(){
+  state.lastBackupAt = todayKey();
+  save();
+  renderBackupReminder();
+}
+
+document.getElementById('btnBackupDrive').onclick = backupToDrive;
+document.getElementById('btnBackupNow').onclick = backupToDrive;
 document.getElementById('btnImport').onclick = ()=> document.getElementById('fileImport').click();
 document.getElementById('fileImport').onchange = (e)=>{
   const f = e.target.files[0]; if(!f) return;
@@ -823,6 +869,30 @@ function renderReminder(){
   box.style.display = need ? 'flex' : 'none';
   document.getElementById('remindSub').textContent = `${k}　測完體溫順手記一下吧`;
   document.getElementById('btnRemind').onclick = ()=> openEdit(k);
+}
+
+function renderBackupReminder(){
+  const box = document.getElementById('backupReminder');
+  const sub = document.getElementById('backupSub');
+  const hint = document.getElementById('lastBackupHint');
+  const hasData = Object.keys(state.records).length > 0;
+  const last = state.lastBackupAt;
+  const today = todayKey();
+  const daysSince = last ? daysBetween(parseDate(last), parseDate(today)) : null;
+
+  // 7 天沒備份、或從沒備份卻有資料 → 顯示紅色提醒
+  const need = hasData && (!last || daysSince >= 7);
+  box.style.display = need ? 'flex' : 'none';
+  if(need){
+    sub.textContent = last
+      ? `上次備份：${last}（已 ${daysSince} 天）　點下方按鈕一鍵備份到 Drive`
+      : `從未備份過。萬一手機壞掉資料會全沒！`;
+  }
+  if(last){
+    hint.textContent = `上次備份：${last}（${daysSince} 天前）。資料只存本機瀏覽器，建議每週備份一次。`;
+  } else {
+    hint.textContent = '尚未備份過。資料只存本機瀏覽器，建議現在就備份一次。';
+  }
 }
 
 /* ---------- 預測卡 ---------- */
@@ -882,6 +952,7 @@ function renderAll(){
   if(state.profile.name) bits.push(state.profile.name);
   if(state.profile.chart) bits.push('#'+state.profile.chart);
   pl.textContent = bits.join(' ');
+  renderBackupReminder();
   renderReminder();
   renderPrediction();
   renderTabs();
