@@ -46,12 +46,16 @@
   .pill.on{background:#fff3ec;border-color:var(--orange-dark);color:var(--orange-dark)}
   .pill .sym{font-weight:700}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .month-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
-  .month-tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .month-tabs{display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap}
+  .month-tabs button{padding:6px 10px;font-size:13px;min-width:44px}
+  .month-tabs button.on{background:var(--tiffany);color:#0f2e2b;border-color:var(--accent2);font-weight:600}
 
   /* chart */
   .chart-wrap{overflow:hidden}
   svg.chart{display:block;background:#fff;width:100%;height:auto;max-width:640px;margin:0 auto;border-radius:6px}
+  svg.chart .day-hit{fill:transparent;cursor:pointer}
+  svg.chart .day-hit:hover{fill:rgba(129,216,208,0.25)}
+  svg.chart .day-hit:active{fill:rgba(129,216,208,0.45)}
 
   /* day list */
   .day{display:flex;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px dashed var(--line)}
@@ -217,7 +221,10 @@
       <svg class="chart" id="chart" width="900" height="360" viewBox="0 0 900 360"></svg>
     </div>
     <div class="row" style="justify-content:space-between;margin-top:6px">
-      <span class="hint">● 體溫　▮ 月經　<span style="color:#16a34a">⊙ 實際排卵</span>　<span style="color:#16a34a">┊預測排卵</span>　<span style="color:#dc2626">┊預計經期</span>　<span style="background:#86efac;opacity:.5;padding:0 4px;border-radius:2px">易孕窗</span></span>
+      <span class="hint">
+        <span style="color:#c0392b">● 體溫</span>　▮ 月經　<span style="color:#16a34a">⊙ 實際排卵</span>　<span style="color:#16a34a">┊預測排卵</span>　<span style="color:#dc2626">┊預計經期</span><br>
+        <span style="color:#2c7be5;font-weight:700">○</span> 夜尿　<span style="color:#c0392b;font-weight:700">✕</span> 半夜醒　<span style="color:#e0a800;font-weight:700">☆</span> 早醒　<span style="color:#7c3aed;font-weight:700">◎</span> 晚睡　<span style="color:#ec4899;font-weight:700">△</span> 行房　<span style="color:#16a34a;font-weight:700">□</span> 晚起
+      </span>
       <span class="hint" id="rangeLabel"></span>
     </div>
   </div>
@@ -297,7 +304,7 @@
     <div class="row" style="margin-bottom:8px">
       <label>起始月份</label>
       <input type="month" id="sStart">
-      <span class="hint">圖表會顯示此月起連續 2 個月</span>
+      <span class="hint">圖表會顯示此月起連續 8 個月</span>
     </div>
     <div class="actions">
       <button id="btnSetCancel">取消</button>
@@ -309,12 +316,12 @@
 <script>
 /* ---------- 資料模型 ---------- */
 const TAGS = [
-  {k:'nocturia',  sym:'○', name:'夜尿'},
-  {k:'wakeMid',   sym:'✕', name:'半夜醒'},
-  {k:'wakeEarly', sym:'☆', name:'早醒'},
-  {k:'lateSleep', sym:'◎', name:'晚睡'},
-  {k:'sex',       sym:'△', name:'行房'},
-  {k:'lateRise',  sym:'□', name:'晚起'},
+  {k:'nocturia',  sym:'○', name:'夜尿',   color:'#2c7be5'},
+  {k:'wakeMid',   sym:'✕', name:'半夜醒', color:'#c0392b'},
+  {k:'wakeEarly', sym:'☆', name:'早醒',   color:'#e0a800'},
+  {k:'lateSleep', sym:'◎', name:'晚睡',   color:'#7c3aed'},
+  {k:'sex',       sym:'△', name:'行房',   color:'#ec4899'},
+  {k:'lateRise',  sym:'□', name:'晚起',   color:'#16a34a'},
 ];
 const LS_KEY = 'bbt-tracker-v1';
 
@@ -430,19 +437,21 @@ function detectOvulations(){
 }
 
 /* ---------- 渲染：月份分頁 ---------- */
+const MONTH_TABS = 8;
 function renderTabs(){
   const tabs = document.getElementById('monthTabs');
   tabs.innerHTML = '';
-  for(let i=0;i<2;i++){
+  for(let i=0;i<MONTH_TABS;i++){
     const ym = addMonth(state.startMonth, i);
+    const m = Number(ym.slice(5,7));
     const b = document.createElement('button');
-    b.textContent = ym.replace('-','年') + '月';
+    b.textContent = `${m}月`;
     if(i===state.activeMonthIdx) b.classList.add('on');
     b.onclick = ()=>{ state.activeMonthIdx = i; save(); renderAll(); };
     tabs.appendChild(b);
   }
   const rl = document.getElementById('rangeLabel');
-  rl.textContent = `${state.startMonth} ～ ${addMonth(state.startMonth,1)}`;
+  rl.textContent = `${state.startMonth} ～ ${addMonth(state.startMonth, MONTH_TABS-1)}`;
 }
 
 /* ---------- 渲染：圖表 ---------- */
@@ -452,11 +461,11 @@ function renderChart(){
   const days = monthDays(ym);
 
   // 緊湊版：整月一目了然，不用左右滑
-  const W = 360, H = 260;
+  const W = 360, H = 280;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.removeAttribute('width');
 
-  const padL = 26, padR = 4, padT = 8, padB = 24;
+  const padL = 26, padR = 4, padT = 8, padB = 56;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
@@ -491,8 +500,21 @@ function renderChart(){
     g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
            stroke="${isMajor?'#cfd8d6':'#eef3f2'}" stroke-width="${isMajor?0.6:0.3}"/>`;
     if(isMajor){
-      g += `<text x="${xx}" y="${H-padB+9}" text-anchor="middle" font-size="7" fill="#5a7a76">${d}</text>`;
+      g += `<text x="${xx}" y="${H-padB+8}" text-anchor="middle" font-size="7" fill="#5a7a76">${d}</text>`;
     }
+  }
+
+  // 備註符號（在日期下方，每個符號固定位置 + 顏色）
+  const tagBase = H - padB + 16;
+  for(let d=1; d<=days; d++){
+    const r = state.records[dateKey(ym,d)];
+    if(!r || !r.tags || !r.tags.length) continue;
+    const xx = x(d);
+    TAGS.forEach((t, ti)=>{
+      if(r.tags.includes(t.k)){
+        g += `<text x="${xx}" y="${tagBase + ti*6.5}" text-anchor="middle" font-size="6.5" fill="${t.color}" font-weight="700">${t.sym}</text>`;
+      }
+    });
   }
 
   // 預測：易孕窗 / 排卵 / 預計經期
@@ -583,16 +605,25 @@ function renderChart(){
       const yy = y(r.temp);
       g += `<circle cx="${xx}" cy="${yy}" r="1.6" fill="#c0392b"/>`;
     }
-    if(r.tags && r.tags.length){
-      let line = padT + 3;
-      r.tags.forEach((k,idx)=>{
-        const t = TAGS.find(x=>x.k===k); if(!t) return;
-        g += `<text x="${xx}" y="${line + idx*6}" text-anchor="middle" font-size="5.5" fill="#5a7a76">${t.sym}</text>`;
-      });
-    }
+  }
+
+  // 透明點擊區（含日期 + 符號區）
+  const colW = plotW / days;
+  const hitH = plotH + padB - 4;
+  for(let d=1; d<=days; d++){
+    const xx = x(d);
+    g += `<rect class="day-hit" data-day="${d}" x="${xx - colW/2}" y="${padT}" width="${colW}" height="${hitH}"><title>${dateKey(ym,d)}</title></rect>`;
   }
 
   svg.innerHTML = g;
+
+  // 綁定點擊 → 開編輯
+  svg.querySelectorAll('.day-hit').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const d = Number(el.dataset.day);
+      openEdit(dateKey(ym, d));
+    });
+  });
 }
 
 /* ---------- 渲染：當月每日清單 ---------- */
@@ -606,7 +637,8 @@ function renderDayList(){
     const r = state.records[key];
     if(!r) continue;
     const tags = (r.tags||[]).map(k=>{
-      const t = TAGS.find(x=>x.k===k); return t ? `${t.sym}${t.name}` : '';
+      const t = TAGS.find(x=>x.k===k);
+      return t ? `<span style="color:${t.color};font-weight:700">${t.sym}</span>${t.name}` : '';
     }).join('  ');
     const flow = r.flow==='heavy' ? '🔴經(多)' : r.flow==='light' ? '🩸經(少)' : '';
     html += `<div class="day">
@@ -657,7 +689,7 @@ function openEdit(key){
   TAGS.forEach(t=>{
     const el = document.createElement('span');
     el.className = 'pill';
-    el.innerHTML = `<span class="sym">${t.sym}</span> ${t.name}`;
+    el.innerHTML = `<span class="sym" style="color:${t.color}">${t.sym}</span> ${t.name}`;
     el.dataset.k = t.k;
     if(r.tags && r.tags.includes(t.k)) el.classList.add('on');
     el.onclick = ()=> el.classList.toggle('on');
