@@ -278,7 +278,7 @@
   </div>
 
   <!-- 每次部署記得把版本號 +1，方便確認手機有沒有更新到 -->
-  <p class="hint" style="text-align:center;opacity:.75">版本 v5（2026-06-12）</p>
+  <p class="hint" style="text-align:center;opacity:.75">版本 v6（2026-06-12）</p>
 
 </main>
 
@@ -298,9 +298,15 @@
       <label>月經周期（第幾天）</label>
       <input type="number" id="fCycleDay" min="1" max="99" step="1" placeholder="例如 1" style="width:80px">
     </div>
-    <div class="row" style="margin-bottom:8px">
+    <div style="margin:6px 0">
       <label>行經期間</label>
-      <input type="text" id="fPeriodTxt" maxlength="2" placeholder="二字內" style="width:80px">
+      <div class="row" style="margin-top:6px" id="fPeriodRow">
+        <span class="pill" data-period="">無</span>
+        <span class="pill" data-period="多">多</span>
+        <span class="pill" data-period="少">少</span>
+        <span class="pill" data-period="other">其他</span>
+        <input type="text" id="fPeriodTxt" maxlength="2" placeholder="二字內" style="width:80px;display:none">
+      </div>
     </div>
     <div style="margin:6px 0">
       <label>白帶量</label>
@@ -923,7 +929,14 @@ function openEdit(key){
 
   // 月經周期 / 行經期間 / 白帶量
   document.getElementById('fCycleDay').value = (typeof r.cycleDay==='number') ? r.cycleDay : '';
-  document.getElementById('fPeriodTxt').value = r.periodTxt || '';
+  const pt = r.periodTxt || '';
+  const ptPreset = (pt==='' || pt==='多' || pt==='少') ? pt : 'other';
+  document.querySelectorAll('#fPeriodRow .pill').forEach(p=>{
+    p.classList.toggle('on', p.dataset.period === ptPreset);
+  });
+  const ptInput = document.getElementById('fPeriodTxt');
+  ptInput.style.display = (ptPreset==='other') ? '' : 'none';
+  ptInput.value = (ptPreset==='other') ? pt : '';
   document.querySelectorAll('#fDischargeRow .pill').forEach(p=>{
     p.classList.toggle('on', p.dataset.discharge === (r.discharge||''));
   });
@@ -959,6 +972,16 @@ document.querySelectorAll('#fDischargeRow .pill').forEach(p=>{
   };
 });
 
+document.querySelectorAll('#fPeriodRow .pill').forEach(p=>{
+  p.onclick = ()=>{
+    document.querySelectorAll('#fPeriodRow .pill').forEach(x=>x.classList.remove('on'));
+    p.classList.add('on');
+    const inp = document.getElementById('fPeriodTxt');
+    if(p.dataset.period === 'other'){ inp.style.display=''; inp.focus(); }
+    else { inp.style.display='none'; }
+  };
+});
+
 document.getElementById('btnSave').onclick = ()=>{
   const key = document.getElementById('fDate').value;
   if(!key){ alert('請選擇日期'); return; }
@@ -981,7 +1004,10 @@ document.getElementById('btnSave').onclick = ()=>{
       alert('月經周期天數請輸入 1–99'); return;
     }
   }
-  const periodTxt = document.getElementById('fPeriodTxt').value.trim().slice(0,2);
+  const ptPill = (document.querySelector('#fPeriodRow .pill.on')||{}).dataset?.period || '';
+  const periodTxt = ptPill==='other'
+    ? document.getElementById('fPeriodTxt').value.trim().slice(0,2)
+    : ptPill;
   const discharge = (document.querySelector('#fDischargeRow .pill.on')||{}).dataset?.discharge || '';
 
   const rec = { temp:(temp===null?undefined:temp), tags, note,
