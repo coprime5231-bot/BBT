@@ -300,6 +300,22 @@
         <span class="pill" data-flow="heavy">多</span>
       </div>
     </div>
+    <div class="row" style="margin-bottom:8px">
+      <label>月經周期（第幾天）</label>
+      <input type="number" id="fCycleDay" min="1" max="99" step="1" placeholder="例如 1" style="width:80px">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label>行經期間</label>
+      <input type="text" id="fPeriodTxt" maxlength="2" placeholder="二字內" style="width:80px">
+    </div>
+    <div style="margin:6px 0">
+      <label>白帶量</label>
+      <div class="row" style="margin-top:6px" id="fDischargeRow">
+        <span class="pill" data-discharge="">無</span>
+        <span class="pill" data-discharge="多">多</span>
+        <span class="pill" data-discharge="少">少</span>
+      </div>
+    </div>
     <div style="margin:8px 0">
       <label>備註（可多選）</label>
       <div class="row" style="margin-top:6px" id="fTagsRow"></div>
@@ -667,13 +683,26 @@ function renderChart(){
   const view = getView();
   const totalDays = view.totalDays;
 
-  const W = 360, H = 280;
+  const W = 360;
+  const padL = 26, padR = 4, padB = 48;
+  // 圖表上方表頭列：日期 / 月經周期 / 行經期間 / 白帶量
+  const HR = [
+    {key:'date',      label:'日期',     h:9},
+    {key:'cycleDay',  label:'月經周期', h:9},
+    {key:'periodTxt', label:'行經期間', h:13},
+    {key:'discharge', label:'白帶量',   h:9},
+  ];
+  const headerTop = 3;
+  let hAcc = headerTop;
+  HR.forEach(r=>{ r.top = hAcc; hAcc += r.h; });
+  const headerBot = hAcc;
+  const padT = headerBot + 4;
+  const plotH = 216;
+  const H = padT + plotH + padB;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.removeAttribute('width');
 
-  const padL = 26, padR = 4, padT = 8, padB = 56;
   const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
 
   const tMin = 36.00, tMax = 37.30;
   const xOfIdx = idx => padL + idx * (plotW / Math.max(totalDays - 1, 1));
@@ -702,7 +731,7 @@ function renderChart(){
            stroke="#9ed3cb" stroke-dasharray="2 2" stroke-width="0.7"/>`;
   });
 
-  // x 軸：每月份各自從 1 號重新標
+  // x 軸：直欄格線（日期標籤已移到上方表頭）
   view.months.forEach((m, mi)=>{
     for(let d=1; d<=m.days; d++){
       const idx = m.offset + d - 1;
@@ -710,14 +739,11 @@ function renderChart(){
       const isMajor = (d===1 || d%5===0 || d===m.days);
       g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
              stroke="${isMajor?'#cfd8d6':'#eef3f2'}" stroke-width="${isMajor?0.6:0.3}"/>`;
-      if(isMajor){
-        g += `<text x="${xx}" y="${H-padB+8}" text-anchor="middle" font-size="6.5" fill="#5a7a76">${d}</text>`;
-      }
     }
     // 月份分隔線（雙月時）
     if(mi > 0){
       const xx = xOfIdx(m.offset) - (plotW/Math.max(totalDays-1,1))/2;
-      g += `<line x1="${xx}" x2="${xx}" y1="${padT-2}" y2="${H-padB+12}" stroke="#0aa29a" stroke-width="1"/>`;
+      g += `<line x1="${xx}" x2="${xx}" y1="${headerTop}" y2="${H-4}" stroke="#0aa29a" stroke-width="1"/>`;
     }
     // 月份標題（雙月時顯示）
     if(view.months.length > 1){
@@ -726,8 +752,49 @@ function renderChart(){
     }
   });
 
-  // 備註符號（在日期下方，每個符號固定位置 + 顏色）
-  const tagBase = H - padB + 16;
+  // 上方表頭表格（格線）
+  const colW0 = plotW / Math.max(totalDays - 1, 1);
+  const tableR = Math.min(W - 1, padL + (totalDays - 0.5) * colW0);
+  g += `<line x1="1" x2="${tableR}" y1="${headerTop}" y2="${headerTop}" stroke="#9ed3cb" stroke-width="0.6"/>`;
+  HR.forEach(r=>{
+    g += `<line x1="1" x2="${tableR}" y1="${r.top + r.h}" y2="${r.top + r.h}" stroke="#cfd8d6" stroke-width="0.4"/>`;
+  });
+  for(let i=0; i<=totalDays; i++){
+    const bx = padL + (i - 0.5) * colW0;
+    g += `<line x1="${bx}" x2="${bx}" y1="${headerTop}" y2="${headerBot}" stroke="#e3edeb" stroke-width="0.3"/>`;
+  }
+  g += `<line x1="1" x2="1" y1="${headerTop}" y2="${headerBot}" stroke="#9ed3cb" stroke-width="0.6"/>`;
+  // 列標籤
+  HR.forEach(r=>{
+    g += `<text x="19" y="${r.top + r.h/2 + 1.7}" text-anchor="end" font-size="4.5" fill="#3a5a56" font-weight="600">${r.label}</text>`;
+  });
+  // 每日表頭內容
+  const hf = totalDays > 35 ? 4.2 : 6;
+  view.months.forEach(m=>{
+    for(let d=1; d<=m.days; d++){
+      const xx = xOfIdx(m.offset + d - 1);
+      const rec = state.records[dateKey(m.ym, d)] || {};
+      // 日期（每日顯示）
+      g += `<text x="${xx}" y="${HR[0].top + HR[0].h - 2.5}" text-anchor="middle" font-size="${hf}" fill="#5a7a76">${d}</text>`;
+      // 月經周期第幾天
+      if(rec.cycleDay){
+        g += `<text x="${xx}" y="${HR[1].top + HR[1].h - 2.5}" text-anchor="middle" font-size="${hf}" fill="#c0392b" font-weight="700">${rec.cycleDay}</text>`;
+      }
+      // 行經期間（二字直排）
+      if(rec.periodTxt){
+        String(rec.periodTxt).slice(0,2).split('').forEach((ch,ci)=>{
+          g += `<text x="${xx}" y="${HR[2].top + 5.4 + ci*5.8}" text-anchor="middle" font-size="5" fill="#7c3aed" font-weight="600">${escapeHtml(ch)}</text>`;
+        });
+      }
+      // 白帶量（多/少）
+      if(rec.discharge){
+        g += `<text x="${xx}" y="${HR[3].top + HR[3].h - 2.5}" text-anchor="middle" font-size="5" fill="${rec.discharge==='多' ? '#0aa29a' : '#8aa6a2'}" font-weight="700">${escapeHtml(rec.discharge)}</text>`;
+      }
+    }
+  });
+
+  // 備註符號（圖表下方，每個符號固定位置 + 顏色）
+  const tagBase = H - padB + 8;
   view.months.forEach(m=>{
     for(let d=1; d<=m.days; d++){
       const r = state.records[dateKey(m.ym, d)];
@@ -843,14 +910,14 @@ function renderChart(){
     }
   });
 
-  // 透明點擊區
+  // 透明點擊區（含上方表頭，點任一格都能編輯）
   const colW = plotW / totalDays;
-  const hitH = plotH + padB - 4;
+  const hitH = H - 4 - headerTop;
   view.months.forEach(m=>{
     for(let d=1; d<=m.days; d++){
       const xx = xOfIdx(m.offset + d - 1);
       const dk = dateKey(m.ym, d);
-      g += `<rect class="day-hit" data-key="${dk}" x="${xx - colW/2}" y="${padT}" width="${colW}" height="${hitH}"><title>${dk}</title></rect>`;
+      g += `<rect class="day-hit" data-key="${dk}" x="${xx - colW/2}" y="${headerTop}" width="${colW}" height="${hitH}"><title>${dk}</title></rect>`;
     }
   });
 
@@ -881,10 +948,14 @@ function renderDayList(){
       return t ? `<span style="color:${t.color};font-weight:700">${t.sym}</span>${t.name}` : '';
     }).join('  ');
     const flow = r.flow==='heavy' ? '🔴經(多)' : r.flow==='light' ? '🩸經(少)' : '';
+    const extras = [];
+    if(r.cycleDay) extras.push(`週期第${r.cycleDay}天`);
+    if(r.periodTxt) extras.push(escapeHtml(r.periodTxt));
+    if(r.discharge) extras.push('白帶'+r.discharge);
     html += `<div class="day">
       <span class="dt">${key.slice(5)}</span>
       <span class="tmp">${typeof r.temp==='number' ? r.temp.toFixed(2)+'°C' : '—'}</span>
-      <span class="tags">${flow} ${tags} ${r.note?('・'+escapeHtml(r.note)):''}</span>
+      <span class="tags">${flow} ${extras.join(' ')} ${tags} ${r.note?('・'+escapeHtml(r.note)):''}</span>
       <span class="edit" data-k="${key}">編輯</span>
     </div>`;
   }
@@ -923,6 +994,13 @@ function openEdit(key){
     p.classList.toggle('on', p.dataset.flow === (r.flow||'none'));
   });
 
+  // 月經周期 / 行經期間 / 白帶量
+  document.getElementById('fCycleDay').value = (typeof r.cycleDay==='number') ? r.cycleDay : '';
+  document.getElementById('fPeriodTxt').value = r.periodTxt || '';
+  document.querySelectorAll('#fDischargeRow .pill').forEach(p=>{
+    p.classList.toggle('on', p.dataset.discharge === (r.discharge||''));
+  });
+
   // tags
   const tagsRow = document.getElementById('fTagsRow');
   tagsRow.innerHTML = '';
@@ -954,6 +1032,13 @@ document.querySelectorAll('#fFlowRow .pill').forEach(p=>{
   };
 });
 
+document.querySelectorAll('#fDischargeRow .pill').forEach(p=>{
+  p.onclick = ()=>{
+    document.querySelectorAll('#fDischargeRow .pill').forEach(x=>x.classList.remove('on'));
+    p.classList.add('on');
+  };
+});
+
 document.getElementById('btnSave').onclick = ()=>{
   const key = document.getElementById('fDate').value;
   if(!key){ alert('請選擇日期'); return; }
@@ -969,8 +1054,23 @@ document.getElementById('btnSave').onclick = ()=>{
   const tags = Array.from(document.querySelectorAll('#fTagsRow .pill.on')).map(p=>p.dataset.k);
   const note = document.getElementById('fNote').value.trim();
 
-  const rec = { temp:(temp===null?undefined:temp), flow, tags, note };
-  if(temp===null && flow==='none' && tags.length===0 && !note){
+  const cdStr = document.getElementById('fCycleDay').value.trim();
+  let cycleDay = null;
+  if(cdStr !== ''){
+    cycleDay = parseInt(cdStr, 10);
+    if(isNaN(cycleDay) || cycleDay < 1 || cycleDay > 99){
+      alert('月經周期天數請輸入 1–99'); return;
+    }
+  }
+  const periodTxt = document.getElementById('fPeriodTxt').value.trim().slice(0,2);
+  const discharge = (document.querySelector('#fDischargeRow .pill.on')||{}).dataset?.discharge || '';
+
+  const rec = { temp:(temp===null?undefined:temp), flow, tags, note,
+                cycleDay:(cycleDay===null?undefined:cycleDay),
+                periodTxt:(periodTxt||undefined),
+                discharge:(discharge||undefined) };
+  if(temp===null && flow==='none' && tags.length===0 && !note
+     && cycleDay===null && !periodTxt && !discharge){
     delete state.records[key];
   } else {
     state.records[key] = rec;
@@ -1026,10 +1126,12 @@ document.getElementById('btnRestore').onclick = ()=> restoreFromGist();
 
 /* ---------- 匯出 / 匯入 ---------- */
 document.getElementById('btnExport').onclick = ()=>{
-  const rows = [['date','temp','flow','tags','note']];
+  const rows = [['date','temp','flow','cycleDay','periodTxt','discharge','tags','note']];
   Object.keys(state.records).sort().forEach(k=>{
     const r = state.records[k];
-    rows.push([k, (typeof r.temp==='number'?r.temp:''), r.flow||'', (r.tags||[]).join('|'), (r.note||'').replace(/\n/g,' ')]);
+    rows.push([k, (typeof r.temp==='number'?r.temp:''), r.flow||'',
+      (typeof r.cycleDay==='number'?r.cycleDay:''), r.periodTxt||'', r.discharge||'',
+      (r.tags||[]).join('|'), (r.note||'').replace(/\n/g,' ')]);
   });
   const csv = rows.map(r => r.map(c => {
     const s = String(c);
