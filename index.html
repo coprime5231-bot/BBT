@@ -696,7 +696,7 @@ function renderChart(){
   let hAcc = headerTop;
   HR.forEach(r=>{ r.top = hAcc; hAcc += r.h; });
   const headerBot = hAcc;
-  const padT = headerBot + 4;
+  const padT = headerBot;  // 表頭直接貼著體溫圖，合為一張表
   const plotH = 216;
   const H = padT + plotH + padB;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -752,10 +752,9 @@ function renderChart(){
     }
   });
 
-  // 上方表頭表格（格線）
+  // 上方表頭表格（格線，與體溫圖連成一張表）
   const colW0 = plotW / Math.max(totalDays - 1, 1);
   const tableR = Math.min(W - 1, padL + (totalDays - 0.5) * colW0);
-  g += `<line x1="1" x2="${tableR}" y1="${headerTop}" y2="${headerTop}" stroke="#9ed3cb" stroke-width="0.6"/>`;
   HR.forEach(r=>{
     g += `<line x1="1" x2="${tableR}" y1="${r.top + r.h}" y2="${r.top + r.h}" stroke="#cfd8d6" stroke-width="0.4"/>`;
   });
@@ -763,7 +762,8 @@ function renderChart(){
     const bx = padL + (i - 0.5) * colW0;
     g += `<line x1="${bx}" x2="${bx}" y1="${headerTop}" y2="${headerBot}" stroke="#e3edeb" stroke-width="0.3"/>`;
   }
-  g += `<line x1="1" x2="1" y1="${headerTop}" y2="${headerBot}" stroke="#9ed3cb" stroke-width="0.6"/>`;
+  // 整張表外框（含表頭與體溫圖）
+  g += `<rect x="1" y="${headerTop}" width="${tableR - 1}" height="${H - padB - headerTop}" fill="none" stroke="#9ed3cb" stroke-width="0.7"/>`;
   // 列標籤
   HR.forEach(r=>{
     g += `<text x="19" y="${r.top + r.h/2 + 1.7}" text-anchor="end" font-size="4.5" fill="#3a5a56" font-weight="600">${r.label}</text>`;
