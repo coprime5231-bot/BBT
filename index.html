@@ -248,8 +248,7 @@
     </div>
     <div class="row" style="justify-content:space-between;margin-top:6px">
       <span class="hint">
-        <span style="color:#c0392b">● 體溫</span>　▮ 月經　<span style="color:#16a34a">⊙ 實際排卵</span>　<span style="color:#16a34a">┊預測排卵</span>　<span style="color:#dc2626">┊預計經期</span><br>
-        <span style="color:#2c7be5;font-weight:700">○</span> 夜尿　<span style="color:#c0392b;font-weight:700">✕</span> 半夜醒　<span style="color:#e0a800;font-weight:700">☆</span> 早醒　<span style="color:#7c3aed;font-weight:700">◎</span> 晚睡　<span style="color:#ec4899;font-weight:700">△</span> 行房　<span style="color:#16a34a;font-weight:700">□</span> 晚起
+        <span style="color:#c0392b">● 體溫</span>　<span style="color:#2c7be5;font-weight:700">○</span> 夜尿　<span style="color:#c0392b;font-weight:700">✕</span> 半夜醒　<span style="color:#e0a800;font-weight:700">☆</span> 早醒　<span style="color:#7c3aed;font-weight:700">◎</span> 晚睡　<span style="color:#ec4899;font-weight:700">△</span> 行房　<span style="color:#16a34a;font-weight:700">□</span> 晚起
       </span>
       <span class="hint" id="rangeLabel"></span>
     </div>
@@ -279,7 +278,7 @@
   </div>
 
   <!-- 每次部署記得把版本號 +1，方便確認手機有沒有更新到 -->
-  <p class="hint" style="text-align:center;opacity:.75">版本 v3（2026-06-12）</p>
+  <p class="hint" style="text-align:center;opacity:.75">版本 v4（2026-06-12）</p>
 
 </main>
 
@@ -294,14 +293,6 @@
     <div class="row" style="margin-bottom:8px">
       <label>基礎體溫 (°C)</label>
       <input type="number" id="fTemp" step="0.01" min="35" max="38" placeholder="例如 36.55">
-    </div>
-    <div style="margin:6px 0">
-      <label>月經 / 出血量</label>
-      <div class="row" style="margin-top:6px" id="fFlowRow">
-        <span class="pill" data-flow="none">無</span>
-        <span class="pill" data-flow="light">少</span>
-        <span class="pill" data-flow="heavy">多</span>
-      </div>
     </div>
     <div class="row" style="margin-bottom:8px">
       <label>月經周期（第幾天）</label>
@@ -556,18 +547,23 @@ function todayKey(){ return fmtDate(new Date()); }
 /* ---------- 週期預測 ---------- */
 function computePrediction(){
   const keys = Object.keys(state.records).sort();
-  const periodStarts = [];
-  let inPeriod = false, lastDate = null;
-  for(const k of keys){
-    const r = state.records[k];
-    const has = r && r.flow && r.flow !== 'none';
-    if(has){
-      let newStart = !inPeriod;
-      if(inPeriod && lastDate && daysBetween(parseDate(lastDate), parseDate(k)) > 2) newStart = true;
-      if(newStart) periodStarts.push(k);
-      inPeriod = true; lastDate = k;
-    } else if(lastDate && daysBetween(parseDate(lastDate), parseDate(k)) > 2){
-      inPeriod = false;
+  // 經期開始＝「月經周期」填 1 的那天
+  let periodStarts = keys.filter(k => (state.records[k]||{}).cycleDay === 1);
+  if(!periodStarts.length){
+    // 相容舊資料：用以前的月經/出血量記錄推斷
+    periodStarts = [];
+    let inPeriod = false, lastDate = null;
+    for(const k of keys){
+      const r = state.records[k];
+      const has = r && r.flow && r.flow !== 'none';
+      if(has){
+        let newStart = !inPeriod;
+        if(inPeriod && lastDate && daysBetween(parseDate(lastDate), parseDate(k)) > 2) newStart = true;
+        if(newStart) periodStarts.push(k);
+        inPeriod = true; lastDate = k;
+      } else if(lastDate && daysBetween(parseDate(lastDate), parseDate(k)) > 2){
+        inPeriod = false;
+      }
     }
   }
   const intervals = [];
@@ -609,7 +605,7 @@ function detectOvulations(){
       if(k < c.start || k > c.end) continue;
       const r = state.records[k];
       if(!r || typeof r.temp !== 'number') continue;
-      if(r.flow && r.flow !== 'none') continue; // 月經期略過
+      if((r.flow && r.flow !== 'none') || r.cycleDay) continue; // 月經期略過
       temps.push({date:k, temp:r.temp});
     }
     if(temps.length < 9) continue;
@@ -718,35 +714,43 @@ function renderChart(){
 
   let g = '';
 
-  // y 軸格線
+  // 格線樣式：綠色實線框（紙本體溫表風）+ 每格中間淺藍虛線
+  const GB = '#2f9e63';   // 綠色框線
+  const GS = '#bfe3cf';   // 淡綠細格線
+  const colW0 = plotW / Math.max(totalDays - 1, 1);
+  const cellL = padL - colW0/2;                                    // 格子區左緣
+  const tableR = Math.min(W - 1, padL + (totalDays - 0.5) * colW0);
+
+  // y 軸橫格線（綠色實線）
   for(let t=tMin*100; t<=tMax*100+0.5; t+=5){
     const tv = t/100;
     const yy = y(tv);
     const major = (Math.round(tv*100) % 10 === 0);
-    g += `<line x1="${padL}" x2="${W-padR}" y1="${yy}" y2="${yy}"
-           stroke="${major?'#cfd8d6':'#eef3f2'}" stroke-width="${major?0.6:0.3}"/>`;
+    g += `<line x1="${cellL}" x2="${tableR}" y1="${yy}" y2="${yy}"
+           stroke="${major?GB:GS}" stroke-width="${major?0.5:0.3}"/>`;
     if(major && Math.round(tv*100) % 20 === 0){
-      g += `<text x="${padL-3}" y="${yy+2.5}" text-anchor="end" font-size="7" fill="#5a7a76">${tv.toFixed(2)}</text>`;
+      g += `<text x="${cellL-2}" y="${yy+2.5}" text-anchor="end" font-size="7" fill="#5a7a76">${tv.toFixed(2)}</text>`;
     }
   }
   [36.50, 37.00].forEach(tv=>{
-    g += `<line x1="${padL}" x2="${W-padR}" y1="${y(tv)}" y2="${y(tv)}"
-           stroke="#9ed3cb" stroke-dasharray="2 2" stroke-width="0.7"/>`;
+    g += `<line x1="${cellL}" x2="${tableR}" y1="${y(tv)}" y2="${y(tv)}" stroke="${GB}" stroke-width="1.1"/>`;
   });
 
-  // x 軸：直欄格線（日期標籤已移到上方表頭）
+  // 直格線：格子框線（綠色實線，從表頭貫穿到體溫圖底，全部對齊）
+  for(let i=0; i<=totalDays; i++){
+    const bx = padL + (i - 0.5) * colW0;
+    g += `<line x1="${bx}" x2="${bx}" y1="${headerTop}" y2="${H-padB}" stroke="${GB}" stroke-width="0.45"/>`;
+  }
+  // 每格中間：淺藍色虛線（記錄體溫用，體溫點落在這條線上）
   view.months.forEach((m, mi)=>{
     for(let d=1; d<=m.days; d++){
-      const idx = m.offset + d - 1;
-      const xx = xOfIdx(idx);
-      const isMajor = (d===1 || d%5===0 || d===m.days);
-      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}"
-             stroke="${isMajor?'#cfd8d6':'#eef3f2'}" stroke-width="${isMajor?0.6:0.3}"/>`;
+      const xx = xOfIdx(m.offset + d - 1);
+      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#8ec5e8" stroke-width="0.45" stroke-dasharray="1.6 1.6"/>`;
     }
     // 月份分隔線（雙月時）
     if(mi > 0){
-      const xx = xOfIdx(m.offset) - (plotW/Math.max(totalDays-1,1))/2;
-      g += `<line x1="${xx}" x2="${xx}" y1="${headerTop}" y2="${H-4}" stroke="#0aa29a" stroke-width="1"/>`;
+      const xx = xOfIdx(m.offset) - colW0/2;
+      g += `<line x1="${xx}" x2="${xx}" y1="${headerTop}" y2="${H-4}" stroke="#0aa29a" stroke-width="1.2"/>`;
     }
     // 月份標題（雙月時顯示）
     if(view.months.length > 1){
@@ -755,18 +759,12 @@ function renderChart(){
     }
   });
 
-  // 上方表頭表格（格線，與體溫圖連成一張表）
-  const colW0 = plotW / Math.max(totalDays - 1, 1);
-  const tableR = Math.min(W - 1, padL + (totalDays - 0.5) * colW0);
+  // 表頭橫線（綠色，與格子對齊）
   HR.forEach(r=>{
-    g += `<line x1="1" x2="${tableR}" y1="${r.top + r.h}" y2="${r.top + r.h}" stroke="#cfd8d6" stroke-width="0.4"/>`;
+    g += `<line x1="1" x2="${tableR}" y1="${r.top + r.h}" y2="${r.top + r.h}" stroke="${GB}" stroke-width="0.5"/>`;
   });
-  for(let i=0; i<=totalDays; i++){
-    const bx = padL + (i - 0.5) * colW0;
-    g += `<line x1="${bx}" x2="${bx}" y1="${headerTop}" y2="${headerBot}" stroke="#e3edeb" stroke-width="0.3"/>`;
-  }
   // 整張表外框（含表頭與體溫圖）
-  g += `<rect x="1" y="${headerTop}" width="${tableR - 1}" height="${H - padB - headerTop}" fill="none" stroke="#9ed3cb" stroke-width="0.7"/>`;
+  g += `<rect x="1" y="${headerTop}" width="${tableR - 1}" height="${H - padB - headerTop}" fill="none" stroke="${GB}" stroke-width="1.1"/>`;
   // 列標籤
   HR.forEach(r=>{
     g += `<text x="19" y="${r.top + r.h/2 + 1.7}" text-anchor="end" font-size="4.5" fill="#3a5a56" font-weight="600">${r.label}</text>`;
@@ -811,47 +809,6 @@ function renderChart(){
     }
   });
 
-  // 預測：易孕窗 / 排卵 / 預計經期
-  const pred = computePrediction();
-  if(pred.fertileStart && pred.fertileEnd){
-    view.months.forEach(m=>{
-      for(let d=1; d<=m.days; d++){
-        const dk = dateKey(m.ym, d);
-        if(dk >= pred.fertileStart && dk <= pred.fertileEnd){
-          const xx = xOfIdx(m.offset + d - 1);
-          const w = Math.max(4, plotW/totalDays*0.95);
-          g += `<rect x="${xx - w/2}" y="${padT}" width="${w}" height="${plotH}" fill="#86efac" opacity="0.18"/>`;
-        }
-      }
-    });
-  }
-  if(pred.ovulation){
-    const xx = xOfDate(pred.ovulation);
-    if(xx !== null){
-      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#16a34a" stroke-dasharray="2 2" stroke-width="0.8"/>`;
-      g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#16a34a">排卵</text>`;
-    }
-  }
-  if(pred.nextStart){
-    const xx = xOfDate(pred.nextStart);
-    if(xx !== null){
-      g += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H-padB}" stroke="#dc2626" stroke-dasharray="2 2" stroke-width="0.8"/>`;
-      g += `<text x="${xx}" y="${padT+6}" text-anchor="middle" font-size="6" fill="#dc2626">經期</text>`;
-    }
-  }
-
-  // 月經期色塊
-  view.months.forEach(m=>{
-    for(let d=1; d<=m.days; d++){
-      const r = state.records[dateKey(m.ym, d)];
-      if(!r || !r.flow || r.flow==='none') continue;
-      const xx = xOfIdx(m.offset + d - 1);
-      const w = Math.max(3, plotW/totalDays*0.8);
-      const color = r.flow==='heavy' ? '#e74c3c' : '#f5b7b1';
-      g += `<rect x="${xx - w/2}" y="${H-padB-5}" width="${w}" height="5" fill="${color}" rx="1"/>`;
-    }
-  });
-
   // 體溫折線（跨月可連續）
   let pathParts = [];
   let lastIdx = null;
@@ -872,33 +829,6 @@ function renderChart(){
   if(pathParts.length){
     g += `<path d="${pathParts.join(' ')}" fill="none" stroke="#c0392b" stroke-width="1.1"/>`;
   }
-
-  // 實際排卵標記（綠圈）+ 覆蓋線
-  const ovs = detectOvulations();
-  const periodStarts = computePrediction().periodStarts;
-  ovs.forEach(o=>{
-    const xx = xOfDate(o.date);
-    if(xx === null) return;
-    const r = state.records[o.date];
-    if(r && typeof r.temp === 'number'){
-      const yy = y(r.temp);
-      g += `<circle cx="${xx}" cy="${yy}" r="3.2" fill="none" stroke="#16a34a" stroke-width="1"/>`;
-      g += `<text x="${xx}" y="${yy-5}" text-anchor="middle" font-size="6" fill="#16a34a" font-weight="700">排</text>`;
-    }
-    if(o.cover){
-      const cy = y(o.cover);
-      const i = periodStarts.indexOf(o.cycleStart);
-      const lastM = view.months[view.months.length-1];
-      const endDate = (i>=0 && i+1<periodStarts.length) ? addDays(periodStarts[i+1],-1) : `${lastM.ym}-${String(lastM.days).padStart(2,'0')}`;
-      let x1 = xOfDate(o.cycleStart);
-      let x2 = xOfDate(endDate);
-      if(x1 === null) x1 = padL;
-      if(x2 === null) x2 = W - padR;
-      if(x2 >= x1){
-        g += `<line x1="${x1}" x2="${x2}" y1="${cy}" y2="${cy}" stroke="#16a34a" stroke-dasharray="1.5 1.5" stroke-width="0.5" opacity="0.7"/>`;
-      }
-    }
-  });
 
   // 體溫點
   view.months.forEach(m=>{
@@ -950,7 +880,6 @@ function renderDayList(){
       const t = TAGS.find(x=>x.k===k);
       return t ? `<span style="color:${t.color};font-weight:700">${t.sym}</span>${t.name}` : '';
     }).join('  ');
-    const flow = r.flow==='heavy' ? '🔴經(多)' : r.flow==='light' ? '🩸經(少)' : '';
     const extras = [];
     if(r.cycleDay) extras.push(`週期第${r.cycleDay}天`);
     if(r.periodTxt) extras.push(escapeHtml(r.periodTxt));
@@ -958,7 +887,7 @@ function renderDayList(){
     html += `<div class="day">
       <span class="dt">${key.slice(5)}</span>
       <span class="tmp">${typeof r.temp==='number' ? r.temp.toFixed(2)+'°C' : '—'}</span>
-      <span class="tags">${flow} ${extras.join(' ')} ${tags} ${r.note?('・'+escapeHtml(r.note)):''}</span>
+      <span class="tags">${extras.join(' ')} ${tags} ${r.note?('・'+escapeHtml(r.note)):''}</span>
       <span class="edit" data-k="${key}">編輯</span>
     </div>`;
   }
@@ -992,11 +921,6 @@ function openEdit(key){
   document.getElementById('fTemp').value = (typeof r.temp==='number') ? r.temp : '';
   document.getElementById('fNote').value = r.note || '';
 
-  // flow
-  document.querySelectorAll('#fFlowRow .pill').forEach(p=>{
-    p.classList.toggle('on', p.dataset.flow === (r.flow||'none'));
-  });
-
   // 月經周期 / 行經期間 / 白帶量
   document.getElementById('fCycleDay').value = (typeof r.cycleDay==='number') ? r.cycleDay : '';
   document.getElementById('fPeriodTxt').value = r.periodTxt || '';
@@ -1028,13 +952,6 @@ document.getElementById('editMask').addEventListener('click', e=>{
 });
 function closeEdit(){ document.getElementById('editMask').classList.remove('show'); }
 
-document.querySelectorAll('#fFlowRow .pill').forEach(p=>{
-  p.onclick = ()=>{
-    document.querySelectorAll('#fFlowRow .pill').forEach(x=>x.classList.remove('on'));
-    p.classList.add('on');
-  };
-});
-
 document.querySelectorAll('#fDischargeRow .pill').forEach(p=>{
   p.onclick = ()=>{
     document.querySelectorAll('#fDischargeRow .pill').forEach(x=>x.classList.remove('on'));
@@ -1053,7 +970,6 @@ document.getElementById('btnSave').onclick = ()=>{
       alert('體溫看起來不對，請輸入 34–40°C 之間'); return;
     }
   }
-  const flow = (document.querySelector('#fFlowRow .pill.on')||{}).dataset?.flow || 'none';
   const tags = Array.from(document.querySelectorAll('#fTagsRow .pill.on')).map(p=>p.dataset.k);
   const note = document.getElementById('fNote').value.trim();
 
@@ -1068,11 +984,11 @@ document.getElementById('btnSave').onclick = ()=>{
   const periodTxt = document.getElementById('fPeriodTxt').value.trim().slice(0,2);
   const discharge = (document.querySelector('#fDischargeRow .pill.on')||{}).dataset?.discharge || '';
 
-  const rec = { temp:(temp===null?undefined:temp), flow, tags, note,
+  const rec = { temp:(temp===null?undefined:temp), tags, note,
                 cycleDay:(cycleDay===null?undefined:cycleDay),
                 periodTxt:(periodTxt||undefined),
                 discharge:(discharge||undefined) };
-  if(temp===null && flow==='none' && tags.length===0 && !note
+  if(temp===null && tags.length===0 && !note
      && cycleDay===null && !periodTxt && !discharge){
     delete state.records[key];
   } else {
